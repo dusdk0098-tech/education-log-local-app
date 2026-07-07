@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>안전보건교육일지 로컬 앱</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark">安</span>
+      <div>
+        <strong>교육일지</strong>
+        <small>Local DB</small>
+      </div>
+    </div>
+    <nav>
+      <button class="nav-button active" data-view="write">작성</button>
+      <button class="nav-button" data-view="document">문서 설정</button>
+      <button class="nav-button" data-view="settings">DB 설정</button>
+      <button class="nav-button" data-view="records">저장 기록</button>
+      <button class="nav-button" data-view="stats">근로자 통계</button>
+    </nav>
+    <div class="draft-strip">
+      <div><span>교육과정</span><strong id="draftCourse">-</strong></div>
+      <div><span>참석 인원</span><strong id="draftAttendees">0명</strong></div>
+      <div><span>교육 시간</span><strong id="draftHours">0시간</strong></div>
+      <div><span>출력 양식</span><strong id="draftTemplate">일반</strong></div>
+    </div>
+  </aside>
+
+  <main class="app">
+    <section class="workspace view active" id="view-write">
+      <header class="topbar">
+        <div>
+          <h1>안전보건교육일지 작성</h1>
+          <p>입력값은 오른쪽 인쇄 미리보기에 즉시 반영됩니다.</p>
+        </div>
+        <div class="actions">
+          <button id="saveReport">저장</button>
+          <button class="primary" id="printReport">현재 탭 인쇄</button>
+        </div>
+      </header>
+
+      <div class="form-stepper" aria-label="작성 단계">
+        <div class="form-step-buttons">
+          <button type="button" class="form-step active" data-form-step="0">교육 과정</button>
+          <button type="button" class="form-step" data-form-step="1">기본·시간</button>
+          <button type="button" class="form-step" data-form-step="2">내용·참석자</button>
+          <button type="button" class="form-step" data-form-step="3">서명·첨부</button>
+        </div>
+        <div class="form-step-actions">
+          <button type="button" id="prevFormStep">이전</button>
+          <span id="formStepMeta">1 / 4</span>
+          <button type="button" class="primary" id="nextFormStep">다음</button>
+        </div>
+      </div>
+
+      <div class="split">
+        <form class="editor" id="reportForm" data-step="0">
+          <section class="course-section" data-form-panel="0">
+            <div class="section-head">
+              <h2>교육 과정</h2>
+              <span>교육명과 법정시간이 자동 반영됩니다.</span>
+            </div>
+            <label>교육 선택<select id="course" class="course-select"></select></label>
+            <div class="course-summary" id="courseSummary"></div>
+            <label class="special-only">특별교육 작업명<select id="specialTask"></select></label>
+            <label class="dual-only">두 번째 특별교육 작업명<select id="specialTask2"></select></label>
+          </section>
+
+          <section class="basic-section" data-form-panel="1">
+            <div class="section-head">
+              <h2>기본 정보</h2>
+              <span>공사명, 날짜, 공종을 먼저 정하면 출력 확인이 쉽습니다.</span>
+            </div>
+            <label>공사명<input id="projectName" type="text"></label>
+            <div class="grid-2">
+              <label>교육일자<input id="date" type="date"></label>
+              <label>교육대상인원<input id="headcount" type="number" min="0"></label>
+            </div>
+            <div class="trade-grid">
+              <label>공종 1<select id="trade0"></select></label>
+              <label>공종 2<select id="trade1"></select></label>
+              <label>공종 3<select id="trade2"></select></label>
+              <label>공종 4<select id="trade3"></select></label>
+              <label>공종 5<select id="trade4"></select></label>
+            </div>
+          </section>
+
+          <section class="time-section" data-form-panel="1">
+            <div class="section-head">
+              <h2>시간·장소</h2>
+              <span id="legalHoursHint">법정교육시간</span>
+            </div>
+            <div class="grid-2">
+              <label>1회차 시작<select id="session1Start"></select></label>
+              <label>1회차 시간<input id="session1Hours" type="number" min="0" step="0.5"></label>
+              <label>2회차 시작<select id="session2Start"></select></label>
+              <label>2회차 시간<input id="session2Hours" type="number" min="0" step="0.5"></label>
+              <label>교육강사<select id="instructor"></select></label>
+              <label>교육장소<select id="place"></select></label>
+              <label>교육방법<select id="method"></select></label>
+              <label>사용교재<input id="material" type="text"></label>
+            </div>
+          </section>
+
+          <section class="people-section" data-form-panel="2">
+            <div class="section-head">
+              <h2>내용·참석자</h2>
+              <span>참석자는 한 줄에 한 명씩 입력하면 인원과 근로자 기록에 반영됩니다.</span>
+            </div>
+            <label hidden>교육내용<div class="readonly-content" id="contentPreview"></div></label>
+            <label>추가내용<textarea id="extraContent" rows="3"></textarea></label>
+            <label>참석자 명단<textarea id="attendees" rows="7" placeholder="홍길동"></textarea></label>
+            <div class="field-help" id="attendeeHelp">현재 참석자 0명</div>
+          </section>
+
+          <section class="sign-section" data-form-panel="3">
+            <div class="section-head">
+              <h2>결재 서명</h2>
+              <span>서명 이미지를 넣으면 결재란에 바로 반영됩니다.</span>
+            </div>
+            <div class="grid-2">
+              <label>안전관리자 서명<input id="safetySignatureFile" type="file" accept="image/*"></label>
+              <label>현장소장 서명<input id="siteSignatureFile" type="file" accept="image/*"></label>
+            </div>
+            <div class="field-help state-help" id="signatureHelp">서명 이미지 없음</div>
+          </section>
+
+          <section class="attach-section" data-form-panel="3">
+            <div class="section-head">
+              <h2>첨부</h2>
+              <span>교육사진대지와 기초이수증 첨부 페이지가 보고서 뒤에 추가됩니다.</span>
+            </div>
+            <label>교육사진대지 사진<input id="photoFiles" type="file" accept="image/*" multiple></label>
+            <label>사진 설명<textarea id="photoCaptions" rows="3" placeholder="교육 전경&#10;교육 참석"></textarea></label>
+            <label>기초이수증 첨부<input id="certificateFiles" type="file" accept="image/*" multiple></label>
+            <label>이수증 설명<textarea id="certificateCaptions" rows="3" placeholder="홍길동 기초안전보건교육 이수증"></textarea></label>
+            <div class="field-help state-help" id="attachmentHelp">첨부 파일 없음</div>
+          </section>
+        </form>
+
+        <section class="preview-panel">
+          <div class="preview-toolbar">
+            <div class="preview-tabs" role="tablist" aria-label="출력 탭">
+              <button type="button" class="preview-tab active" data-preview-tab="journal">교육일지</button>
+              <button type="button" class="preview-tab" data-preview-tab="photos">교육사진대지</button>
+              <button type="button" class="preview-tab" data-preview-tab="certificates">기초이수증</button>
+            </div>
+            <div class="preview-toolbar-actions">
+              <span id="previewMeta">A4 인쇄 미리보기</span>
+              <button id="refreshPreview" type="button">새로고침</button>
+            </div>
+          </div>
+          <div class="preview" id="preview"></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="workspace view" id="view-document">
+      <header class="topbar">
+        <div>
+          <h1>문서 설정</h1>
+          <p>작성된 교육일지 PDF가 저장될 폴더를 설정합니다.</p>
+        </div>
+      </header>
+      <section class="db-panel document-settings-panel">
+        <div class="section-head">
+          <h2>문서 저장</h2>
+          <span>한 번 저장한 경로는 다시 바꾸기 전까지 유지됩니다.</span>
+        </div>
+        <label>저장 폴더 경로<input id="saveDirectory" class="path-input" type="text" placeholder="C:\Users\user\Desktop\교육일지"></label>
+        <div class="path-status" id="savePathHelp">경로를 입력하면 저장 시 PDF가 함께 생성됩니다.</div>
+        <div class="actions left">
+          <button class="primary" id="saveDocumentSettings" type="button">문서 설정 저장</button>
+        </div>
+      </section>
+      <section class="db-panel document-settings-panel update-settings-panel">
+        <div class="section-head">
+          <h2>프로그램 업데이트</h2>
+          <span>배포자가 올린 최신 버전을 자동으로 확인하고 적용합니다.</span>
+        </div>
+        <label>업데이트 정보 URL<input id="updateManifestUrl" class="path-input" type="url" placeholder="https://example.com/education-log/update.json"></label>
+        <label class="check-row"><input id="autoUpdateEnabled" type="checkbox"> 앱 시작 시 자동 업데이트 적용</label>
+        <div class="path-status" id="updateStatus">업데이트 URL을 입력하면 최신 버전을 확인할 수 있습니다.</div>
+        <div class="actions left">
+          <button id="checkUpdate" type="button">업데이트 확인</button>
+          <button class="primary" id="applyUpdate" type="button" disabled>업데이트 적용</button>
+        </div>
+      </section>
+    </section>
+
+    <section class="workspace view" id="view-settings" data-settings-step="basic">
+      <header class="topbar">
+        <div>
+          <h1>DB 설정</h1>
+          <p>현장 기본값, 선택 목록, 교육과정, 교육내용 DB를 직접 수정합니다.</p>
+        </div>
+        <button class="primary" id="saveSettings">설정 저장</button>
+      </header>
+      <div class="settings-switcher" aria-label="DB 설정 화면">
+        <button type="button" class="settings-tab active" data-settings-target="basic">기본 목록</button>
+        <button type="button" class="settings-tab" data-settings-target="courses">교육과정 DB</button>
+        <button type="button" class="settings-tab" data-settings-target="content">교육내용 DB</button>
+      </div>
+      <div class="settings-grid" data-settings-section="basic">
+        <label>기본 공사명<input id="settingProjectName" type="text"></label>
+        <label>공종 목록<textarea id="settingTrade" rows="8"></textarea></label>
+        <label>시간 목록<textarea id="settingTime" rows="8"></textarea></label>
+        <label>교육방법 목록<textarea id="settingMethod" rows="8"></textarea></label>
+        <label>교육장소 목록<textarea id="settingPlace" rows="8"></textarea></label>
+        <label>강사 목록<textarea id="settingInstructor" rows="8"></textarea></label>
+      </div>
+      <section class="db-panel" data-settings-section="courses">
+        <div class="section-head">
+          <h2>교육과정 DB</h2>
+          <span>작성 화면의 교육 선택, 교육대상, 법정교육시간을 수정합니다.</span>
+        </div>
+        <div id="courseEditor" class="db-editor"></div>
+      </section>
+      <section class="db-panel" data-settings-section="content">
+        <div class="section-head">
+          <h2>교육내용 DB</h2>
+          <span>작성 화면과 인쇄 양식에 자동 반영되는 교육내용입니다.</span>
+        </div>
+        <div class="actions left">
+          <button id="addContentRow" type="button">교육내용 추가</button>
+        </div>
+        <div id="contentEditor" class="db-editor"></div>
+      </section>
+    </section>
+
+    <section class="workspace view" id="view-records">
+      <header class="topbar">
+        <div>
+          <h1>저장 기록</h1>
+          <p>현재 로컬 SQLite DB에 저장된 교육일지입니다.</p>
+        </div>
+        <button id="reloadRecords">새로고침</button>
+      </header>
+      <div class="record-list" id="recordList"></div>
+    </section>
+
+    <section class="workspace view" id="view-stats" data-stats-step="workers">
+      <header class="topbar">
+        <div>
+          <h1>근로자 교육 기록·통계</h1>
+          <p>저장된 교육일지의 참석자 명단을 기준으로 이수 기록을 집계합니다.</p>
+        </div>
+        <button id="reloadStats">새로고침</button>
+      </header>
+      <div class="stats-cards">
+        <div><span>저장 교육일지</span><strong id="statReports">0</strong></div>
+        <div><span>근로자</span><strong id="statWorkers">0</strong></div>
+        <div><span>누적 이수</span><strong id="statCompletions">0</strong></div>
+        <div><span>누적 시간</span><strong id="statHours">0</strong></div>
+      </div>
+      <div class="stats-switcher" aria-label="근로자 통계 화면">
+        <button type="button" class="stats-tab active" data-stats-target="workers">근로자별</button>
+        <button type="button" class="stats-tab" data-stats-target="detail">개별 조회</button>
+        <button type="button" class="stats-tab" data-stats-target="courses">교육과정</button>
+        <button type="button" class="stats-tab" data-stats-target="monthly">월별 기록</button>
+      </div>
+      <div class="stats-layout">
+        <section class="table-panel" data-stats-section="workers">
+          <div class="section-head">
+            <h2>근로자별 이수 현황</h2>
+            <label class="inline-search">이름 검색<input id="workerSearch" type="search" placeholder="근로자 이름"></label>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>근로자</th><th>이수</th><th>시간</th><th>최근일</th><th>교육</th><th>조회</th></tr></thead>
+              <tbody id="workerStatsRows"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="table-panel worker-detail" id="workerDetailPanel" data-stats-section="detail">
+          <h2 id="workerDetailTitle">근로자 개별 조회</h2>
+          <div id="workerDetailSummary" class="field-help">근로자를 선택하면 개인 이수 내역이 표시됩니다.</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>교육일</th><th>교육명</th><th>구분</th><th>시간</th><th>법정시간</th><th>현장</th></tr></thead>
+              <tbody id="workerDetailRows"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="table-panel" data-stats-section="courses">
+          <h2>교육과정별 통계</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>교육명</th><th>인원</th><th>이수</th><th>시간</th></tr></thead>
+              <tbody id="courseStatsRows"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="table-panel" data-stats-section="monthly">
+          <h2>월별 기록</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>월</th><th>일지</th><th>근로자</th><th>이수</th><th>시간</th></tr></thead>
+              <tbody id="monthlyStatsRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

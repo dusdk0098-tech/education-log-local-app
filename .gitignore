@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+education_log.db
+server.log
+server.pid
+qa_outputs/
+dist/
