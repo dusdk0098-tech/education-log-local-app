@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>안전보건교육일지 로컬 앱</title>
+  <link rel="icon" href="/static/app.ico" sizes="any">
+  <link rel="shortcut icon" href="/static/app.ico">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -22,16 +24,26 @@
       <button class="nav-button" data-view="records">저장 기록</button>
       <button class="nav-button" data-view="stats">근로자 통계</button>
     </nav>
-    <div class="draft-strip">
+    <div class="draft-strip" aria-label="작성 요약">
+      <p class="draft-title">작성 요약</p>
       <div><span>교육과정</span><strong id="draftCourse">-</strong></div>
+      <div class="draft-target-row"><span>교육대상</span><strong id="draftTarget">-</strong></div>
       <div><span>참석 인원</span><strong id="draftAttendees">0명</strong></div>
       <div><span>교육 시간</span><strong id="draftHours">0시간</strong></div>
       <div><span>출력 양식</span><strong id="draftTemplate">일반</strong></div>
+    </div>
+    <div class="stats-cards sidebar-stats" aria-label="근로자 통계 요약">
+      <p class="draft-title">근로자 통계</p>
+      <div><span>저장 교육일지</span><strong id="statReports">0</strong></div>
+      <div><span>근로자</span><strong id="statWorkers">0</strong></div>
+      <div><span>누적 이수</span><strong id="statCompletions">0</strong></div>
+      <div><span>누적 시간</span><strong id="statHours">0</strong></div>
     </div>
   </aside>
 
   <main class="app">
     <section class="workspace view active" id="view-write">
+      <div class="write-controls">
       <header class="topbar">
         <div>
           <h1>안전보건교육일지 작성</h1>
@@ -57,7 +69,6 @@
         </div>
       </div>
 
-      <div class="split">
         <form class="editor" id="reportForm" data-step="0">
           <section class="course-section" data-form-panel="0">
             <div class="section-head">
@@ -141,8 +152,9 @@
             <div class="field-help state-help" id="attachmentHelp">첨부 파일 없음</div>
           </section>
         </form>
+      </div>
 
-        <section class="preview-panel">
+      <section class="preview-panel">
           <div class="preview-toolbar">
             <div class="preview-tabs" role="tablist" aria-label="출력 탭">
               <button type="button" class="preview-tab active" data-preview-tab="journal">교육일지</button>
@@ -155,8 +167,7 @@
             </div>
           </div>
           <div class="preview" id="preview"></div>
-        </section>
-      </div>
+      </section>
     </section>
 
     <section class="workspace view" id="view-document">
@@ -175,19 +186,6 @@
         <div class="path-status" id="savePathHelp">경로를 입력하면 저장 시 PDF가 함께 생성됩니다.</div>
         <div class="actions left">
           <button class="primary" id="saveDocumentSettings" type="button">문서 설정 저장</button>
-        </div>
-      </section>
-      <section class="db-panel document-settings-panel update-settings-panel">
-        <div class="section-head">
-          <h2>프로그램 업데이트</h2>
-          <span>배포자가 올린 최신 버전을 자동으로 확인하고 적용합니다.</span>
-        </div>
-        <label>업데이트 정보 URL<input id="updateManifestUrl" class="path-input" type="url" placeholder="https://example.com/education-log/update.json"></label>
-        <label class="check-row"><input id="autoUpdateEnabled" type="checkbox"> 앱 시작 시 자동 업데이트 적용</label>
-        <div class="path-status" id="updateStatus">업데이트 URL을 입력하면 최신 버전을 확인할 수 있습니다.</div>
-        <div class="actions left">
-          <button id="checkUpdate" type="button">업데이트 확인</button>
-          <button class="primary" id="applyUpdate" type="button" disabled>업데이트 적용</button>
         </div>
       </section>
     </section>
@@ -216,7 +214,7 @@
       <section class="db-panel" data-settings-section="courses">
         <div class="section-head">
           <h2>교육과정 DB</h2>
-          <span>작성 화면의 교육 선택, 교육대상, 법정교육시간을 수정합니다.</span>
+          <span>작성 화면의 교육 선택, 출력 교육대상, 법정교육시간을 수정합니다.</span>
         </div>
         <div id="courseEditor" class="db-editor"></div>
       </section>
@@ -238,7 +236,10 @@
           <h1>저장 기록</h1>
           <p>현재 로컬 SQLite DB에 저장된 교육일지입니다.</p>
         </div>
-        <button id="reloadRecords">새로고침</button>
+        <div class="actions left">
+          <button id="reloadRecords" type="button">새로고침</button>
+          <button class="danger" id="clearRecords" type="button">저장 기록 초기화</button>
+        </div>
       </header>
       <div class="record-list" id="recordList"></div>
     </section>
@@ -251,12 +252,6 @@
         </div>
         <button id="reloadStats">새로고침</button>
       </header>
-      <div class="stats-cards">
-        <div><span>저장 교육일지</span><strong id="statReports">0</strong></div>
-        <div><span>근로자</span><strong id="statWorkers">0</strong></div>
-        <div><span>누적 이수</span><strong id="statCompletions">0</strong></div>
-        <div><span>누적 시간</span><strong id="statHours">0</strong></div>
-      </div>
       <div class="stats-switcher" aria-label="근로자 통계 화면">
         <button type="button" class="stats-tab active" data-stats-target="workers">근로자별</button>
         <button type="button" class="stats-tab" data-stats-target="detail">개별 조회</button>
@@ -281,7 +276,7 @@
           <div id="workerDetailSummary" class="field-help">근로자를 선택하면 개인 이수 내역이 표시됩니다.</div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>교육일</th><th>교육명</th><th>구분</th><th>시간</th><th>법정시간</th><th>현장</th></tr></thead>
+              <thead><tr><th>교육일</th><th>교육명/교육대상</th><th>구분</th><th>시간</th><th>법정시간</th><th>현장</th></tr></thead>
               <tbody id="workerDetailRows"></tbody>
             </table>
           </div>
@@ -290,7 +285,7 @@
           <h2>교육과정별 통계</h2>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>교육명</th><th>인원</th><th>이수</th><th>시간</th></tr></thead>
+              <thead><tr><th>교육명/교육대상</th><th>인원</th><th>이수</th><th>시간</th></tr></thead>
               <tbody id="courseStatsRows"></tbody>
             </table>
           </div>

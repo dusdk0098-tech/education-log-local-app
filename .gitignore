@@ -1,7 +1,12 @@
 __pycache__/
 *.pyc
+.omo/
+build/
 education_log.db
 server.log
+server.err.log
 server.pid
 qa_outputs/
 dist/
+node_modules/
+output/playwright/

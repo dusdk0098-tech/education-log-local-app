@@ -1,0 +1,24 @@
+{
+  "name": "localeducationlogapp",
+  "version": "1.0.1",
+  "description": "원본 엑셀의 `안내`/`목차`/`DB`/인쇄 양식 구조를 로컬 웹앱으로 다시 구현한 버전입니다.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dusdk0098-tech/education-log-local-app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/dusdk0098-tech/education-log-local-app/issues"
+  },
+  "homepage": "https://github.com/dusdk0098-tech/education-log-local-app#readme",
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
+}

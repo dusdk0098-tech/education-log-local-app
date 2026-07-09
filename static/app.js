@@ -10,7 +10,6 @@ const state = {
   certificateAttachments: [],
   safetySignature: null,
   siteSignature: null,
-  updateInfo: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -24,7 +23,19 @@ const COURSE_TONES = {
   "특수형태근로종사자": "special-worker",
   "물질안전보건자료": "msds",
   "소음/난청": "noise",
+  "혹서기 온열질환": "heat",
 };
+const TARGET_DISPLAY_OVERRIDES = {
+  "50-2": "2)그 밖의 근로자 - 가) 판매업무에 직접 종사하는 근로자",
+  "50-3": "2)그 밖의 근로자 - 나) 판매업무에 직접 종사하는 근자외의 근로자",
+  "71": "특수형태근로종사자 최초 노무 제공 시 교육 - 단기간 작업 또는 간헐적 작업에 노무를 제공하는 경우",
+  "1-39)71)": "특수형태근로종사자 특별교육 - 단기간 작업 또는 간헐적 작업에 노무를 제공하는 경우",
+};
+const CONTEXT_TARGET_SHEETS = new Set([
+  "51-1", "51-2", "52-1", "52-2",
+  "1-39(1)", "1-39(2)", "1-39(3)", "1-39(4)",
+  "1-39(2-1)", "1-39(2-2)", "1-39(2-3)",
+]);
 
 function html(value) {
   return String(value ?? "")
@@ -64,13 +75,54 @@ function fillCourseSelect() {
     const group = document.createElement("optgroup");
     group.label = category;
     courses.forEach((course) => {
-      const option = new Option(`${course.sheet} · ${course.name}`, course.sheet);
+      const label = courseOptionLabel(course);
+      const option = new Option(label, course.sheet);
+      option.title = label;
       option.dataset.course = JSON.stringify(course);
       option.dataset.tone = courseTone(course.category);
       group.append(option);
     });
     select.add(group);
   });
+}
+
+function courseOptionLabel(course) {
+  const taskLabel = courseTaskLabel(course);
+  const pieces = [course.sheet, course.name, courseTargetDisplay(course)]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+  if (taskLabel) pieces.push(`대상작업 ${taskLabel}`);
+  return pieces.filter((value, index) => pieces.indexOf(value) === index).join(" · ");
+}
+
+function courseTargetDisplay(course) {
+  const sheet = String(course?.sheet || "").trim();
+  const displayTarget = String(course?.display_target ?? course?.displayTarget ?? "").trim();
+  if (displayTarget) return displayTarget;
+  const target = String(course?.course_target ?? course?.courseTarget ?? course?.target ?? "").trim();
+  if (TARGET_DISPLAY_OVERRIDES[sheet]) return TARGET_DISPLAY_OVERRIDES[sheet];
+  if (course?.name === "가. 정기교육" && target === "가) 판매업무에 직접 종사하는 근로자") {
+    return TARGET_DISPLAY_OVERRIDES["50-2"];
+  }
+  if (course?.name === "가. 정기교육" && target === "나) 판매업무에 직접 종사하는 근자외의 근로자") {
+    return TARGET_DISPLAY_OVERRIDES["50-3"];
+  }
+  return target;
+}
+
+function courseTargetUiDisplay(course) {
+  const sheet = String(course?.sheet || "").trim();
+  const name = String(course?.name ?? course?.course_name ?? course?.courseName ?? "").trim();
+  const target = courseTargetDisplay(course);
+  if (!target || !name || target.includes(name) || !CONTEXT_TARGET_SHEETS.has(sheet)) return target;
+  return `${name} - ${target}`;
+}
+
+function courseDisplayName(row) {
+  const name = String(row?.course_name ?? row?.courseName ?? row?.name ?? "").trim();
+  const target = courseTargetDisplay(row);
+  if (target && target !== name) return name ? `${name} - ${target}` : target;
+  return name || target || "-";
 }
 
 function selectedCourse() {
@@ -96,19 +148,36 @@ function contentCodes(course = selectedCourse()) {
   return String(course.content_code || "").split(",").map((code) => code.trim()).filter(Boolean);
 }
 
+function courseTaskLabel(course = selectedCourse()) {
+  if (!course || !["special", "dual_special"].includes(course.template)) return "";
+  return contentCodes(course)
+    .map((code) => state.data.specialTasks.find((task) => task.code === code)?.task_name || "")
+    .filter(Boolean)
+    .join(" / ");
+}
+
 function courseTone(category) {
   return COURSE_TONES[category] || "default";
 }
 
 function updateCourseDisplay(course = selectedCourse()) {
   const select = $("course");
-  select.className = `course-select course-${courseTone(course.category)}`;
-  $("legalHoursHint").textContent = `법정교육시간: ${course.legal_hours || "-"}`;
-  $("courseSummary").innerHTML = [
+  const taskLabel = courseTaskLabel(course);
+  const targetLabel = courseTargetDisplay(course);
+  const targetUiLabel = courseTargetUiDisplay(course);
+  const chips = [
     `<span class="course-chip course-${courseTone(course.category)}">${html(course.category || "교육")}</span>`,
     `<span class="course-chip">법정 ${html(course.legal_hours || "-")}</span>`,
     `<span class="course-chip">${course.template === "dual_special" ? "특별 2종" : course.template === "special" ? "특별 양식" : "일반 양식"}</span>`,
-  ].join("");
+    `<span class="course-chip course-chip-target">교육대상 ${html(targetUiLabel || "-")}</span>`,
+  ];
+  if (taskLabel) {
+    chips.push(`<span class="course-chip course-chip-target course-chip-task">대상작업 ${html(taskLabel)}</span>`);
+  }
+  select.className = `course-select course-${courseTone(course.category)}`;
+  $("legalHoursHint").textContent = `법정교육시간: ${course.legal_hours || "-"}`;
+  $("courseSummary").innerHTML = chips.join("");
+  select.title = [targetUiLabel || targetLabel, taskLabel && `대상작업 ${taskLabel}`].filter(Boolean).join("\n");
 }
 
 function updateSavePathHelp() {
@@ -116,11 +185,6 @@ function updateSavePathHelp() {
   $("savePathHelp").textContent = value
     ? `저장 위치: ${value}`
     : "경로를 입력하면 저장 시 PDF가 함께 생성됩니다. 비워두면 DB 기록만 저장합니다.";
-}
-
-function setUpdateStatus(message, tone = "") {
-  $("updateStatus").textContent = message;
-  $("updateStatus").dataset.tone = tone;
 }
 
 function captionLines(id) {
@@ -184,9 +248,11 @@ function readPayload() {
     projectName: $("projectName").value,
     saveDirectory: $("saveDirectory").value,
     date: $("date").value,
+    sheet: course.sheet,
     courseName: course.name,
     category: course.category,
     target: course.target,
+    displayTarget: courseTargetDisplay(course),
     legalHours: course.legal_hours,
     template: course.template,
     contentCode: course.content_code,
@@ -266,8 +332,14 @@ function moveFormStep(offset) {
 
 function updateDraftStrip() {
   const payload = state.payload || readPayload();
+  const course = state.data.courses.find((item) => item.sheet === payload.sheet);
   const attendeeCount = payload.attendees.split(/\r?\n/).filter((line) => line.trim()).length;
-  $("draftCourse").textContent = payload.courseName || "-";
+  const draftCourse = payload.courseName || "-";
+  const draftTarget = courseTargetUiDisplay(course || payload) || "-";
+  $("draftCourse").textContent = draftCourse;
+  $("draftCourse").title = draftCourse;
+  $("draftTarget").textContent = draftTarget;
+  $("draftTarget").title = draftTarget;
   $("draftAttendees").textContent = `${attendeeCount}명`;
   $("draftHours").textContent = `${payload.totalHours || 0}시간`;
   $("draftTemplate").textContent = payload.template === "dual_special" ? "특별 2종" : payload.template === "special" ? "특별 2페이지" : "일반 1페이지";
@@ -324,10 +396,7 @@ function loadDefaults() {
 
   $("projectName").value = state.data.settings.projectName || "";
   $("saveDirectory").value = state.data.settings.saveDirectory || "";
-  $("updateManifestUrl").value = state.data.settings.updateManifestUrl || "";
-  $("autoUpdateEnabled").checked = state.data.settings.autoUpdateEnabled === "1";
   updateSavePathHelp();
-  setUpdateStatus(`현재 버전 ${state.data.settings.currentVersion || "1.0.0"} · 업데이트 URL을 입력하면 최신 버전을 확인할 수 있습니다.`);
   $("date").value = new Date().toISOString().slice(0, 10);
   $("headcount").value = "3";
   $("trade0").value = options.trade[0] || "";
@@ -381,53 +450,10 @@ async function saveDocumentSettings() {
   state.data = await api("/api/settings", {
     settings: {
       saveDirectory: $("saveDirectory").value,
-      updateManifestUrl: $("updateManifestUrl").value.trim(),
-      autoUpdateEnabled: $("autoUpdateEnabled").checked ? "1" : "0",
     },
   });
   updateSavePathHelp();
-  setUpdateStatus("문서 저장 경로와 업데이트 설정을 저장했습니다.", "ok");
   alert("문서 설정을 저장했습니다.");
-}
-
-async function checkForUpdate(auto = false) {
-  const manifestUrl = $("updateManifestUrl").value.trim();
-  $("applyUpdate").disabled = true;
-  if (!manifestUrl) {
-    setUpdateStatus("업데이트 URL이 설정되지 않았습니다.", "warn");
-    return null;
-  }
-  setUpdateStatus("업데이트를 확인하는 중입니다.");
-  const info = await api("/api/update/check", { manifestUrl });
-  state.updateInfo = info;
-  if (info.error) {
-    setUpdateStatus(info.error, "warn");
-    return info;
-  }
-  $("applyUpdate").disabled = !info.available;
-  const message = info.available
-    ? `새 버전 ${info.latestVersion} 사용 가능 · 현재 ${info.currentVersion}`
-    : `현재 최신 버전입니다. 현재 ${info.currentVersion}`;
-  setUpdateStatus(info.notes ? `${message} · ${info.notes}` : message, info.available ? "ok" : "");
-  if (auto && info.autoUpdateEnabled && info.available) await applyUpdate(true);
-  return info;
-}
-
-async function applyUpdate(auto = false) {
-  if (!state.updateInfo?.available && !auto) {
-    await checkForUpdate(false);
-    if (!state.updateInfo?.available) return;
-  }
-  setUpdateStatus("업데이트를 다운로드하고 적용 준비 중입니다. 곧 앱이 재시작됩니다.");
-  $("applyUpdate").disabled = true;
-  const info = await api("/api/update/apply", { manifestUrl: $("updateManifestUrl").value.trim() });
-  state.updateInfo = info;
-  if (info.error) {
-    $("applyUpdate").disabled = false;
-    setUpdateStatus(info.error, "warn");
-    return;
-  }
-  setUpdateStatus(info.updating ? "업데이트 적용 중입니다. 앱이 자동으로 다시 열립니다." : info.message, info.updating ? "ok" : "");
 }
 
 function renderCourseEditor() {
@@ -436,7 +462,8 @@ function renderCourseEditor() {
       <label>시트<input data-field="sheet" value="${html(course.sheet)}"></label>
       <label>구분<input data-field="category" value="${html(course.category)}"></label>
       <label>교육명<input data-field="name" value="${html(course.name)}"></label>
-      <label>교육대상<input data-field="target" value="${html(course.target)}"></label>
+      <label class="target-wide">원본 교육대상<textarea data-field="target" rows="4">${html(course.target)}</textarea></label>
+      <label class="target-wide">출력 교육대상<textarea data-field="display_target" rows="4">${html(course.display_target || courseTargetDisplay(course))}</textarea></label>
       <label>법정교육시간<input data-field="legal_hours" value="${html(course.legal_hours)}"></label>
       <label>양식<select data-field="template"><option value="regular">일반</option><option value="special">특별</option><option value="dual_special">특별 2종</option></select></label>
       <label>내용코드<input data-field="content_code" value="${html(course.content_code)}"></label>
@@ -467,6 +494,7 @@ function readCourseEditor() {
     category: row.querySelector('[data-field="category"]').value,
     name: row.querySelector('[data-field="name"]').value,
     target: row.querySelector('[data-field="target"]').value,
+    display_target: row.querySelector('[data-field="display_target"]').value,
     legal_hours: row.querySelector('[data-field="legal_hours"]').value,
     template: row.querySelector('[data-field="template"]').value,
     content_code: row.querySelector('[data-field="content_code"]').value,
@@ -498,8 +526,16 @@ async function saveReport() {
 async function loadRecords() {
   const { reports } = await api("/api/reports");
   $("recordList").innerHTML = reports.length
-    ? reports.map((row) => `<div class="record-row"><strong>${html(row.title)}</strong><small>${html(row.created_at)}</small></div>`).join("")
+    ? reports.map((row) => `<div class="record-row"><strong>${html(row.courseDisplayName || row.title)}</strong><span>교육인원 ${html(row.educationCount || "0")}명</span><small>${html(row.created_at)}</small></div>`).join("")
     : "<div class=\"record-row\"><strong>저장된 기록이 없습니다.</strong><small></small></div>";
+}
+
+async function clearRecords() {
+  if (!confirm("저장된 교육일지 기록과 근로자 이수 기록을 모두 초기화할까요?")) return;
+  const result = await api("/api/clear-reports", { confirm: true });
+  await loadRecords();
+  await loadStats();
+  alert(`초기화했습니다.\n저장 기록 ${result.deletedReports}건\n근로자 이수 기록 ${result.deletedWorkerRecords}건`);
 }
 
 async function loadStats() {
@@ -511,7 +547,7 @@ async function loadStats() {
   $("statHours").textContent = `${data.summary.total_hours || 0}시간`;
   filterWorkerStats();
   $("courseStatsRows").innerHTML = data.courses.length
-    ? data.courses.map((row) => `<tr><td>${html(row.course_name)}</td><td>${row.worker_count}</td><td>${row.completion_count}</td><td>${row.total_hours}</td></tr>`).join("")
+    ? data.courses.map((row) => `<tr><td>${html(courseDisplayName(row))}</td><td>${row.worker_count}</td><td>${row.completion_count}</td><td>${row.total_hours}</td></tr>`).join("")
     : "<tr><td colspan=\"4\">교육과정 통계가 없습니다.</td></tr>";
   $("monthlyStatsRows").innerHTML = data.monthly.length
     ? data.monthly.map((row) => `<tr><td>${html(row.month)}</td><td>${row.report_count}</td><td>${row.worker_count}</td><td>${row.completion_count}</td><td>${row.total_hours}</td></tr>`).join("")
@@ -543,7 +579,7 @@ function renderWorkerDetail(workerName) {
   $("workerDetailTitle").textContent = `${workerName} 이수 내역`;
   $("workerDetailSummary").textContent = `총 ${records.length}건, ${totalHours}시간 이수`;
   $("workerDetailRows").innerHTML = records.length
-    ? records.map((row) => `<tr><td>${html(row.training_date)}</td><td>${html(row.course_name)}</td><td>${html(row.category)}</td><td>${row.completed_hours}</td><td>${html(row.legal_hours)}</td><td>${html(row.project_name)}</td></tr>`).join("")
+    ? records.map((row) => `<tr><td>${html(row.training_date)}</td><td>${html(courseDisplayName(row))}</td><td>${html(row.category)}</td><td>${row.completed_hours}</td><td>${html(row.legal_hours)}</td><td>${html(row.project_name)}</td></tr>`).join("")
     : "<tr><td colspan=\"6\">이수 기록이 없습니다.</td></tr>";
 }
 
@@ -604,8 +640,6 @@ async function start() {
   $("reportForm").addEventListener("input", renderPreview);
   $("reportForm").addEventListener("change", renderPreview);
   $("saveDirectory").addEventListener("input", updateSavePathHelp);
-  $("checkUpdate").addEventListener("click", () => checkForUpdate(false).catch((error) => setUpdateStatus(error.message, "warn")));
-  $("applyUpdate").addEventListener("click", () => applyUpdate(false).catch((error) => setUpdateStatus(error.message, "warn")));
   document.querySelectorAll("[data-form-step]").forEach((button) => button.addEventListener("click", () => setFormStep(button.dataset.formStep)));
   $("prevFormStep").addEventListener("click", () => moveFormStep(-1));
   $("nextFormStep").addEventListener("click", () => moveFormStep(1));
@@ -620,6 +654,7 @@ async function start() {
   $("saveDocumentSettings").addEventListener("click", saveDocumentSettings);
   $("saveSettings").addEventListener("click", saveSettings);
   $("reloadRecords").addEventListener("click", loadRecords);
+  $("clearRecords").addEventListener("click", () => clearRecords().catch((error) => alert(error.message)));
   $("reloadStats").addEventListener("click", loadStats);
   $("workerSearch").addEventListener("input", filterWorkerStats);
   $("workerStatsRows").addEventListener("click", (event) => {
@@ -635,9 +670,6 @@ async function start() {
     renderContentEditor();
   });
   setFormStep(0);
-  if (state.data.settings.autoUpdateEnabled === "1" && state.data.settings.updateManifestUrl) {
-    checkForUpdate(true).catch((error) => setUpdateStatus(error.message, "warn"));
-  }
 }
 
 start().catch((error) => {
