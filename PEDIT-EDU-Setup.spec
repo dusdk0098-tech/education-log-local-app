@@ -5,7 +5,7 @@ a = Analysis(
     ['installer.py'],
     pathex=[],
     binaries=[],
-    datas=[('dist/PEDIT-EDU-1.0.1-windows.zip', '.')],
+    datas=[('dist/PEDIT-EDU-1.0.2-windows.zip', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

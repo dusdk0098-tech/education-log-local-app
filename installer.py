@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 APP_NAME = "PEDIT-EDU"
-ZIP_NAME = "PEDIT-EDU-1.0.1-windows.zip"
+ZIP_NAME = "PEDIT-EDU-1.0.2-windows.zip"
 
 
 def resource_path(name: str) -> Path:

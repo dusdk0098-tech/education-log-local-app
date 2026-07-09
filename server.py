@@ -24,7 +24,7 @@ from xml.etree import ElementTree as ET
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 STATIC_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR)) / "static"
 DB_PATH = APP_DIR / "education_log.db"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 DEFAULT_UPDATE_MANIFEST_URL = "https://github.com/dusdk0098-tech/education-log-local-app/releases/latest/download/update.json"
 DEFAULT_XLSM = Path(
     r"C:\Users\user\Desktop\북평택교육\안전보건교육일지 (2023.09.27 개정 기준) 카페업로드용 2026-03-06 (수정).xlsm"
@@ -170,6 +170,7 @@ def init_db() -> None:
         con.execute("INSERT OR IGNORE INTO settings VALUES (?, ?)", ("projectName", "154kV 북평택변전소 토건공사"))
         con.execute("INSERT OR IGNORE INTO settings VALUES (?, ?)", ("updateManifestUrl", DEFAULT_UPDATE_MANIFEST_URL))
         con.execute("INSERT OR IGNORE INTO settings VALUES (?, ?)", ("autoUpdateEnabled", "1"))
+        con.execute("UPDATE settings SET value=? WHERE key=? AND TRIM(value)=''", (DEFAULT_UPDATE_MANIFEST_URL, "updateManifestUrl"))
         for kind, values in DEFAULT_OPTIONS.items():
             for index, value in enumerate(values):
                 con.execute("INSERT OR IGNORE INTO option_items VALUES (?, ?, ?)", (kind, value, index))
@@ -444,7 +445,7 @@ def setting_value(key: str, default: str = "") -> str:
 def update_config() -> dict:
     return {
         "currentVersion": APP_VERSION,
-        "manifestUrl": setting_value("updateManifestUrl"),
+        "manifestUrl": setting_value("updateManifestUrl", DEFAULT_UPDATE_MANIFEST_URL).strip() or DEFAULT_UPDATE_MANIFEST_URL,
         "autoUpdateEnabled": setting_value("autoUpdateEnabled") == "1",
     }
 
@@ -474,7 +475,7 @@ def fetch_json(url: str) -> dict:
 
 
 def check_update(manifest_url: str = "") -> dict:
-    url = (manifest_url or setting_value("updateManifestUrl")).strip()
+    url = (manifest_url or update_config()["manifestUrl"]).strip()
     result = {
         **update_config(),
         "manifestUrl": url,
@@ -1801,7 +1802,7 @@ def self_check() -> None:
             assert worker_statistics()["summary"]["total_reports"] == 0
         finally:
             DB_PATH = real_db_path
-    assert is_newer_version("1.0.2", APP_VERSION) and not is_newer_version(APP_VERSION, APP_VERSION)
+    assert is_newer_version("1.0.3", APP_VERSION) and not is_newer_version(APP_VERSION, APP_VERSION)
     with tempfile.TemporaryDirectory() as tmp:
         valid_zip = Path(tmp) / "update.zip"
         with zipfile.ZipFile(valid_zip, "w") as zf:
