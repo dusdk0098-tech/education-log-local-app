@@ -1,6 +1,6 @@
 @font-face {
   font-family: "PEDIT-H2HDRM";
-  src: local("H2hdrM"), local("HYHeadLine-Medium"), local("HY헤드라인M");
+  src: url("fonts/H2HDRM.TTF") format("truetype"), local("H2hdrM"), local("HYHeadLine-Medium"), local("HY헤드라인M");
   font-weight: 400;
   font-style: normal;
 }
@@ -100,22 +100,13 @@ button.danger:hover {
   min-height: 100vh;
 }
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 11px;
+  display: block;
 }
-.brand-mark {
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  background: #f2c94c;
-  color: #171c26;
-  border-radius: 8px;
-  font-weight: 800;
+.brand-logo {
+  display: block;
+  height: auto;
+  width: 100%;
 }
-.brand strong { display: block; font-size: 17px; }
-.brand small { display: block; color: #b8c0cf; margin-top: 2px; }
 nav { display: grid; gap: 8px; }
 nav, .nav-button { min-width: 0; }
 .nav-button {
@@ -933,11 +924,14 @@ textarea { resize: vertical; line-height: 1.55; }
   min-height: 297mm;
   background: #fff;
   margin: 0 auto 18px;
-  padding: 15mm 7.2mm 9mm 13.25mm;
+  padding: 14.77mm 7.45mm 9mm 13.25mm;
   box-shadow: var(--shadow);
   color: #000;
   print-color-adjust: exact;
   -webkit-print-color-adjust: exact;
+}
+.paper:has(.special-one-page-sheet) {
+  padding-top: 14.87mm;
 }
 @media screen {
   .preview .paper {
@@ -1071,16 +1065,16 @@ textarea { resize: vertical; line-height: 1.55; }
 .sheet-grid .sheet-title {
   color: var(--report-blue);
   font-family: var(--report-serif);
-  font-size: 20pt;
+  font-size: 21pt;
   font-weight: 800;
 }
 .sheet-title-text {
   display: inline-block;
-  transform: translateY(.27mm) scaleX(.971) scaleY(.94);
+  transform: translate(.4mm, .25mm) scaleX(.925);
   transform-origin: center;
 }
 .sheet-row-title td {
-  height: 12.7mm;
+  height: 13mm;
   padding-top: 1.9mm;
   padding-bottom: 0;
   border-bottom: 0;
@@ -1116,15 +1110,15 @@ textarea { resize: vertical; line-height: 1.55; }
   height: 10mm;
 }
 .project-cell {
-  font-family: var(--report-serif);
+  font-family: "Nanum Myeongjo ExtraBold", "나눔명조 ExtraBold", var(--report-serif);
   font-size: 16pt;
-  font-weight: 800;
+  font-weight: 400;
   height: 17.4mm !important;
   text-align: center !important;
 }
 .project-cell-text {
   display: inline-block;
-  transform: translateY(1.2mm) scaleX(.985) scaleY(.84);
+  transform: translateY(.67mm) scaleX(1.043);
   transform-origin: center;
 }
 .approval-box-cell,
@@ -1175,6 +1169,8 @@ textarea { resize: vertical; line-height: 1.55; }
 .time-grid td.time-start { border-right: 0; }
 .time-grid td.time-sep { border-left: 0; border-right: 0; }
 .time-grid td.time-end { border-left: 0; }
+.time-grid td.time-sep,
+.time-grid td.empty-second-time { color: #000; }
 .approval-grid tr:first-child > *,
 .time-grid tr:first-child > *,
 .sheet-trade-grid tr:first-child > *,
@@ -1223,7 +1219,7 @@ textarea { resize: vertical; line-height: 1.55; }
   transform: translateY(-.15mm);
 }
 .approval-sign-cell {
-  height: 18mm !important;
+  height: 18.3mm !important;
   padding: .45mm !important;
 }
 .approval-diagonal-cell {
@@ -1263,9 +1259,6 @@ textarea { resize: vertical; line-height: 1.55; }
   display: inline-block;
   transform: translateY(.74mm);
 }
-.trade-placeholder {
-  transform: translate(-2.1mm, .74mm);
-}
 .date-value-text {
   transform: translateY(.74mm) scaleX(1.0125);
   transform-origin: left center;
@@ -1292,14 +1285,14 @@ textarea { resize: vertical; line-height: 1.55; }
 }
 .special-target-continuation {
   display: inline-block;
-  transform: translateX(-1.38mm);
+  transform: none;
 }
 .special-one-page-sheet .target-value-text {
-  transform: translateY(.81mm) scaleX(.916);
+  transform: translate(-1.24mm, .12mm) scaleX(.994);
   transform-origin: left center;
 }
 .heat-special-one-page-sheet .target-value-text {
-  transform: translate(-1.52mm, .81mm) scaleX(.916);
+  transform: translate(-1.27mm, .12mm) scaleX(.973);
 }
 .count-value-text {
   transform: translate(.36mm, .85mm) scaleX(.952);
@@ -1327,6 +1320,9 @@ textarea { resize: vertical; line-height: 1.55; }
   display: inline-block;
   transform: translateY(.64mm) scaleX(.973);
   transform-origin: left center;
+}
+.material-cell .material-value-text {
+  transform-origin: center;
 }
 .total-time-cell span {
   display: inline-block;
@@ -1407,6 +1403,7 @@ textarea { resize: vertical; line-height: 1.55; }
 .sheet-grid .course-fill {
   font-family: "PEDIT-H2HDRM", "H2hdrM", "HYHeadLine-Medium", "HY헤드라인M", var(--report-label);
   font-size: 12pt;
+  font-weight: 400;
   background: var(--excel-course-fill);
 }
 .course-value-text {
@@ -1414,15 +1411,16 @@ textarea { resize: vertical; line-height: 1.55; }
 }
 .regular-sheet:not(.special-worker-sheet):not(.msds-sheet) .course-value-text {
   transform: translateY(.39mm);
+  transform-origin: center;
 }
 .special-worker-sheet .course-value-text,
 .msds-sheet .course-value-text {
-  transform: scaleX(1.09);
+  transform: none;
   transform-origin: center;
 }
 .special-sheet .course-value-text,
 .dual-special-sheet .course-value-text {
-  transform: translateY(.39mm) scaleX(1.073);
+  transform: translateY(.39mm);
   transform-origin: center;
 }
 .special-sheet:not(.special-inline-sheet):not(.special-one-page-sheet) .course-value-text {
@@ -1437,13 +1435,13 @@ textarea { resize: vertical; line-height: 1.55; }
   line-height: 1.5;
 }
 .special-sheet:not(.special-inline-sheet) .special-common-row .stacked-label {
-  transform: translateY(.28mm);
+  transform: translateY(-.06mm);
 }
 .special-sheet:not(.special-inline-sheet) .special-individual-row .stacked-label {
   transform: translateY(.38mm);
 }
 .special-sheet:not(.special-inline-sheet) .special-individual-extra-row .stacked-label {
-  transform: translateY(.6mm);
+  transform: translateY(-.11mm);
 }
 .regular-content-row td {
   height: 63.65mm;
@@ -1465,6 +1463,7 @@ textarea { resize: vertical; line-height: 1.55; }
 }
 .routine-regular-sheet .regular-content-text {
   width: 102.7%;
+  max-width: none;
   transform: translateY(.5mm) scaleX(.968);
 }
 .regular-extra-label-text {
@@ -1504,6 +1503,10 @@ textarea { resize: vertical; line-height: 1.55; }
 .supervisor-sheet .regular-content-text {
   transform: scaleX(.985);
 }
+.supervisor-annual-sheet .regular-content-text {
+  width: 102.2%;
+  max-width: none;
+}
 .supervisor-sheet .regular-content-label-text {
   transform: translateY(-.2mm);
 }
@@ -1514,7 +1517,13 @@ textarea { resize: vertical; line-height: 1.55; }
   height: 7.95mm;
 }
 .supervisor-annual-sheet .attendee-data-row td {
-  height: 7.85mm;
+  height: 7.65mm;
+}
+.supervisor-annual-sheet .attendee-header-row + .attendee-data-row td {
+  height: 8.55mm;
+}
+.supervisor-annual-sheet .attendee-header-row th {
+  height: 8.5mm;
 }
 .short-regular-sheet .regular-extra-row th,
 .short-regular-sheet .regular-extra-row td {
@@ -1531,18 +1540,31 @@ textarea { resize: vertical; line-height: 1.55; }
 }
 .msds-sheet .sheet-row-info th,
 .msds-sheet .sheet-row-info td {
-  height: 8.47mm;
+  height: 8.55mm;
 }
 .msds-sheet .sheet-title-text {
-  transform: translateY(.6mm) scaleX(.971) scaleY(.82);
+  transform: translate(.4mm, .4mm) scaleX(.925) scaleY(1.02);
+}
+.msds-sheet .target-value-text {
+  transform: translateY(.1mm);
 }
 .msds-sheet .regular-content-row th,
 .msds-sheet .regular-content-row td {
-  height: 36mm;
+  height: 35.2mm;
+}
+.msds-sheet .msds-combined-content {
+  height: 63.4mm;
+  vertical-align: top;
+}
+.msds-sheet .msds-combined-content .regular-content-text {
+  transform: translateY(3.05mm);
+}
+.msds-sheet .msds-combined-content .regular-extra-text {
+  margin-top: 6.6mm;
 }
 .msds-sheet .regular-extra-row th,
 .msds-sheet .regular-extra-row td {
-  height: 27mm;
+  height: 27.85mm;
 }
 .msds-sheet .regular-content-label-text,
 .msds-sheet .regular-extra-label-text {
@@ -1552,19 +1574,19 @@ textarea { resize: vertical; line-height: 1.55; }
   transform: translate(1.4mm, .25mm);
 }
 .msds-sheet .regular-extra-label-text {
-  transform: translate(1.4mm, .8mm);
+  transform: translate(1.4mm, .2mm);
 }
 .msds-sheet .attendee-data-row td {
-  height: 8.15mm;
+  height: 8.25mm;
 }
 .special-worker-sheet {
   transform: translateX(1.45mm);
 }
 .special-worker-sheet .sheet-title-text {
-  transform: translate(.1mm, .68mm) scaleX(.971) scaleY(.8);
+  transform: translate(.4mm, .25mm) scaleX(.925) scaleY(1);
 }
 .special-worker-sheet .regular-content-row td {
-  height: 76.2mm;
+  height: 76.5mm;
   font-size: 10.3pt;
   line-height: 1.26;
   padding-top: 0;
@@ -1579,16 +1601,48 @@ textarea { resize: vertical; line-height: 1.55; }
 .special-worker-sheet .sheet-row-info td {
   height: 8.55mm;
 }
+.special-worker-sheet .sheet-row-info > th .distributed-label {
+  transform: translateY(-.3mm);
+}
+.special-worker-sheet .regular-content-label-text {
+  transform: translateY(-.23mm);
+}
 .special-worker-sheet .regular-extra-row td {
-  height: 25.4mm;
+  height: 26.1mm;
 }
 .special-worker-sheet .regular-extra-label-text {
-  transform: translateY(.6mm);
+  transform: translateY(.1mm);
 }
 .special-worker-sheet .attendee-title-row th,
 .special-worker-sheet .attendee-header-row th,
 .special-worker-sheet .attendee-data-row td {
-  height: 8.61mm;
+  height: 8.48mm;
+}
+.special-worker-sheet .attendee-data-row td,
+.special-attendee-page .attendee-data-row td,
+.management-inline-sheet .attendee-data-row td,
+.special-worker-inline-sheet .attendee-data-row td {
+  font-size: 11pt;
+  text-align: center;
+}
+.special-worker-sheet .attendee-cell-text,
+.special-attendee-page .attendee-cell-text,
+.management-inline-sheet .attendee-cell-text,
+.special-worker-inline-sheet .attendee-cell-text {
+  display: inline-block;
+  transform: translateY(-.62mm);
+}
+.special-worker-sheet .time-grid th span,
+.msds-sheet .time-grid th span,
+.special-one-page-sheet .time-grid th span {
+  transform: translateY(-.2mm);
+}
+.special-worker-sheet .time-grid,
+.msds-sheet .time-grid {
+  --time-value-y: .5mm;
+}
+.special-worker-sheet .count-value-text {
+  transform: translate(.52mm, .35mm) scaleX(.952);
 }
 .special-task-row td,
 .dual-task-row td {
@@ -1608,7 +1662,15 @@ textarea { resize: vertical; line-height: 1.55; }
   word-break: break-all;
 }
 .special-one-page-sheet .special-task-row td {
-  height: 35.5mm;
+  height: 34.16mm;
+  font-size: 11.18pt;
+}
+.special-one-page-sheet .special-task-label-text {
+  display: inline-block;
+  transform: translateY(-.5mm);
+}
+.special-one-page-sheet .special-task-text {
+  transform: translate(.17mm, .29mm) scaleX(.972);
 }
 .special-one-page-sheet .sheet-row-info th,
 .special-one-page-sheet .sheet-row-info td {
@@ -1616,25 +1678,86 @@ textarea { resize: vertical; line-height: 1.55; }
 }
 .special-one-page-sheet .special-target th,
 .special-one-page-sheet .special-target td {
-  height: 16.93mm;
+  height: 17.56mm;
+}
+.special-one-page-sheet .target-cell {
+  font-size: 11pt;
+}
+.special-one-page-sheet .special-count-row > th[colspan="5"] .distributed-label,
+.special-one-page-sheet .special-time-row > th[colspan="5"] .distributed-label,
+.special-one-page-sheet .special-instructor-row > th[colspan="5"] .distributed-label,
+.special-one-page-sheet .special-method-row > th[colspan="5"] .distributed-label {
+  transform: translateY(-.2mm);
+}
+.special-one-page-sheet .special-target > th[colspan="5"] .distributed-label {
+  transform: translateY(-.25mm);
+}
+.special-one-page-sheet .special-count-row .count-value-text {
+  transform: translate(.36mm, .45mm) scaleX(.952);
+}
+.special-one-page-sheet .special-time-row .time-grid {
+  --time-value-y: .25mm;
+}
+.special-one-page-sheet .total-time-cell span {
+  transform: none;
+}
+.heat-special-one-page-sheet .total-time-cell {
+  font-family: var(--report-label);
+}
+.heat-special-one-page-sheet .total-time-cell span {
+  transform: translateY(-.5mm);
+}
+.special-one-page-sheet .special-instructor-row .field-value-text {
+  transform: translate(.5mm, -.02mm) scaleX(1);
+}
+.heat-special-one-page-sheet .special-instructor-row td:last-child .field-value-text {
+  font-family: var(--report-label);
+}
+.special-one-page-sheet .special-method-row .field-value-text {
+  transform: translate(.31mm, -.02mm);
+}
+.special-one-page-sheet .special-method-row .material-value-text {
+  transform: translate(.36mm, -.02mm);
 }
 .special-one-content-row td {
-  height: 42.33mm;
+  height: 42.89mm;
   text-align: left;
-  font-size: 10pt;
-  line-height: 1.37;
+  font-size: 11.27pt;
+  line-height: 13.58pt;
   padding-top: 0;
 }
+.heat-special-one-page-sheet .special-one-content-row td {
+  font-size: 11.33pt;
+}
 .special-one-content-text {
-  letter-spacing: .27mm;
-  transform: translateY(-.25mm);
+  letter-spacing: 0;
+  transform: translate(.07mm, .36mm) scaleX(.965);
+  transform-origin: left center;
+}
+.heat-special-one-page-sheet .special-one-content-text {
+  transform: translate(.07mm, .36mm) scaleX(.967);
+  transform-origin: left center;
+}
+.heat-special-one-page-sheet .special-task-text {
+  font-family: "PEDIT-H2HDRM", "H2hdrM", "HYHeadLine-Medium", "HY헤드라인M", var(--report-label);
+  font-size: 11pt;
+  font-weight: 400;
+  transform: translate(.17mm, .29mm) scaleX(1.002);
+  transform-origin: left center;
+}
+.tight-bullet {
+  display: inline-block;
+  margin-right: -.12mm;
+}
+.special-one-content-text .excel-tab-glyph {
+  letter-spacing: .31pt;
 }
 .special-one-content-label-text {
   display: inline-block;
-  transform: translateY(-.65mm);
+  transform: translateY(-.38mm);
 }
 .special-one-content-row .stacked-label {
-  transform: translateY(-.45mm);
+  transform: translateY(.08mm);
 }
 .special-one-extra-row td {
   height: 20mm;
@@ -1645,14 +1768,32 @@ textarea { resize: vertical; line-height: 1.55; }
 .special-one-extra-row .stacked-label {
   transform: translateY(-.3mm);
 }
+.special-one-extra-text {
+  display: block;
+  transform: translateY(-.2mm);
+  transform-origin: left top;
+}
+.heat-special-one-page-sheet .special-one-extra-text {
+  transform: translateY(-.1mm);
+}
 .special-one-page-sheet .attendee-title-row th {
   height: 8.8mm;
+  font-size: 16.4pt;
 }
 .special-one-page-sheet .attendee-header-row th {
   height: 8.8mm;
 }
 .special-one-page-sheet .attendee-data-row td {
   height: 8.47mm;
+  font-size: 11pt;
+  text-align: center;
+}
+.special-one-page-sheet .attendee-title-text {
+  transform: translate(.88mm, .455mm) scaleX(.95);
+}
+.special-one-page-sheet .attendee-cell-text {
+  display: inline-block;
+  transform: translateY(-.62mm);
 }
 .special-common-row td {
   height: 54.25mm;
@@ -1703,29 +1844,188 @@ textarea { resize: vertical; line-height: 1.55; }
 }
 .special-sheet:not(.special-inline-sheet) .special-content-label-text {
   display: inline-block;
-  transform: translateY(.4mm);
+  transform: translateY(-.18mm);
 }
 .special-common-extra-row > th,
 .special-common-extra-row > td {
   border-top-color: transparent;
 }
-.special-common-extra-note {
-  display: inline-block;
-  margin-left: .42mm;
-}
 .special-common-leading-bullet {
   display: inline-block;
   transform: translateY(.75mm);
+}
+.special-common-extra-note {
+  display: inline-block;
+  transform: translateY(.5mm);
+}
+.special-common-extra-note-text {
+  font-family: var(--report-label);
 }
 .special-common-extra-bullet {
   display: inline-block;
   transform: translateY(1mm);
 }
-.dual-common-row td {
-  height: 62mm;
+.special-common-extra-note + br + .special-common-extra-bullet + br + .special-common-extra-bullet {
+  transform: translateY(.79mm);
+}
+.dual-common-row > th {
+  height: 27.8mm;
+}
+.dual-common-row .dual-combined-content {
+  height: 75.37mm;
   text-align: left;
+  vertical-align: top;
   font-size: 10pt;
   line-height: 1.28;
+  padding-top: 8.45mm;
+}
+.dual-page-one .project-cell {
+  height: 17.94mm !important;
+}
+.dual-special-sheet .sheet-title-text {
+  transform: translate(.21mm, 1.07mm) scaleX(.925);
+}
+.dual-special-sheet .law-caption-text {
+  transform: translate(.25mm, .3mm) scaleX(1.039);
+}
+.dual-page-one .project-cell-text {
+  transform: translateY(.41mm) scaleX(1.043);
+}
+.dual-page-one .date-value-text {
+  transform: translate(.17mm, .14mm) scaleX(1.007);
+}
+.dual-page-one .course-value-text {
+  transform: translate(.25mm, -.01mm);
+}
+.dual-page-one .legal-hours-fill {
+  font-size: 10.73pt;
+}
+.dual-page-one .top-info-value-light {
+  transform: translate(-1.36mm, -.01mm) scaleX(1.104) scaleY(1.027);
+  transform-origin: left center;
+}
+.dual-page-one .special-target .target-cell {
+  font-size: 11pt;
+  line-height: 1.23;
+  padding-left: .6mm;
+}
+.dual-page-one .target-value-text {
+  transform: translate(.07mm, .27mm) scaleX(.978);
+  transform-origin: left center;
+}
+.dual-page-one .count-value-text {
+  font-size: 11.3pt;
+  transform: translate(.56mm, .37mm) scaleX(.927);
+}
+.dual-page-one .special-count-row .count-cell:last-child .count-value-text {
+  transform: translate(.87mm, .37mm) scaleX(.927);
+}
+.dual-page-one .sheet-date-row > th .distributed-label {
+  transform: translateY(-.34mm);
+}
+.dual-page-one .sheet-trade-row > th .distributed-label {
+  transform: translateY(-.53mm);
+}
+.dual-page-one .sheet-course-row > th:first-child .distributed-label {
+  transform: translateY(-.46mm);
+}
+.dual-page-one .sheet-course-row > th[colspan="4"] .distributed-label {
+  transform: translate(-.33mm, -.46mm);
+}
+.dual-page-one .special-target > th .distributed-label {
+  transform: translateY(-.22mm);
+}
+.dual-page-one .special-count-row > th .distributed-label {
+  transform: translateY(-.23mm);
+}
+.dual-page-one .special-time-row > th:first-child .distributed-label {
+  transform: translateY(-.15mm);
+}
+.dual-page-one .special-instructor-row > th .distributed-label {
+  transform: translateY(-.34mm);
+}
+.dual-page-one .approval-role-text {
+  transform: translate(.4mm, -.53mm);
+}
+.dual-page-one .approval-label-text {
+  transform: translate(.12mm, -.25mm);
+}
+.dual-page-one .total-time-cell span {
+  transform: translateY(.34mm);
+}
+.dual-page-one .time-grid th span {
+  transform: translateY(-.15mm);
+}
+.dual-page-one .time-grid {
+  --time-value-y: .34mm;
+}
+.dual-page-one .time-grid td span {
+  transform: translateY(var(--time-value-y)) scaleX(1.023);
+}
+.dual-page-one .special-instructor-row .field-value-text {
+  transform: translate(.24mm, .14mm) scaleX(.978);
+  transform-origin: center;
+}
+.dual-page-one .special-instructor-row td:last-child .field-value-text {
+  transform: translate(.58mm, .14mm) scaleX(.978);
+}
+.dual-page-one .special-method-row .field-value-text {
+  transform: translate(.24mm, .48mm) scaleX(.978);
+  transform-origin: center;
+}
+.dual-page-one .material-value-text {
+  transform: translate(.36mm, .48mm) scaleX(.977);
+}
+.dual-page-one .dual-task-row:has(+ .dual-task-row) td {
+  height: 32.31mm;
+}
+.dual-page-one .dual-task-row + .dual-task-row td {
+  height: 31.69mm;
+}
+.dual-page-one .special-task-text {
+  width: calc(100% - 6.8mm);
+  line-height: 1.2;
+  transform: translate(.125mm, .1mm) scaleX(1.028) scaleY(1.015);
+  transform-origin: left top;
+}
+.dual-page-one .dual-task-row + .dual-task-row .special-task-text {
+  transform: translate(.125mm, .35mm) scaleX(1.032) scaleY(1.015);
+}
+.dual-page-one .dual-task-label-text {
+  display: inline-block;
+  transform: translate(.09mm, -.14mm);
+}
+.dual-page-one .dual-task-row + .dual-task-row .dual-task-label-text {
+  transform: translate(.09mm, -.22mm);
+}
+.dual-page-one .dual-combined-content {
+  height: 74.02mm;
+  line-height: 1.24;
+  padding-top: 7.4mm;
+  padding-bottom: 0;
+}
+.dual-page-one .dual-common-row > th {
+  height: 60.56mm;
+}
+.dual-page-one .dual-common-row .stacked-label {
+  transform: translateY(.15mm);
+}
+.dual-page-one .dual-extra-row > th {
+  height: 13.45mm;
+}
+.dual-page-one .dual-extra-row .stacked-label {
+  transform: translateY(.04mm);
+}
+.dual-page-one .dual-combined-common {
+  transform: translateX(.03mm) scaleX(1.02);
+  transform-origin: left top;
+}
+.dual-page-one .dual-combined-extra {
+  margin-top: 7mm;
+  transform: translateY(.25mm);
+}
+.dual-combined-extra {
+  margin-top: 4.9mm;
 }
 .special-individual-row td,
 .dual-individual-row td {
@@ -1766,6 +2066,15 @@ textarea { resize: vertical; line-height: 1.55; }
 .special-inline-sheet .special-extra-row td {
   height: 11.4mm;
 }
+.special-inline-sheet .special-individual-extra-row > td {
+  position: relative;
+}
+.special-inline-sheet .special-individual-extra-text {
+  position: absolute;
+  top: -.81mm;
+  left: 1mm;
+  line-height: 1.23;
+}
 .special-individual-extra-row td {
   padding-top: 1.95mm;
 }
@@ -1775,10 +2084,46 @@ textarea { resize: vertical; line-height: 1.55; }
   height: 8mm;
 }
 .management-inline-sheet .attendee-grid {
+  position: static;
+  transform: none;
+}
+.management-inline-sheet .attendee-title-row th,
+.management-inline-sheet .attendee-header-row th,
+.management-inline-sheet .attendee-data-row td {
+  height: 7.42mm;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.management-inline-sheet .special-common-row td {
+  height: 53.21mm;
+}
+.management-inline-sheet .special-individual-row td {
+  height: 36.02mm;
+}
+.special-worker-inline-sheet .special-common-row td {
+  height: 54.27mm;
+}
+.special-worker-inline-sheet .special-individual-row td {
+  height: 36.02mm;
+}
+.special-inline-sheet .special-extra-row td {
+  height: 10.32mm;
+}
+.special-inline-sheet .special-extra-row > th,
+.special-inline-sheet .special-extra-row > td {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.special-inline-sheet .special-extra-row > th {
+  overflow: visible;
   position: relative;
-  top: 2.7mm;
-  transform: scaleY(.92);
-  transform-origin: top left;
+}
+.special-inline-sheet .special-extra-row .stacked-label {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  transform: translateY(-50%);
 }
 .special-worker-long-inline-sheet .attendee-title-row th,
 .special-worker-long-inline-sheet .attendee-header-row th,
@@ -1790,8 +2135,10 @@ textarea { resize: vertical; line-height: 1.55; }
 .special-worker-inline-sheet:not(.special-worker-long-inline-sheet) .attendee-data-row td {
   height: 8.8mm;
 }
+.dual-extra-row > th {
+  height: 47.57mm;
+}
 .dual-extra-row td {
-  height: 13.37mm;
   text-align: left;
   vertical-align: top;
   font-size: 10pt;
@@ -1800,15 +2147,46 @@ textarea { resize: vertical; line-height: 1.55; }
 .dual-continuation-sheet .dual-individual-row td {
   height: 35.7mm;
   text-align: left;
-  line-height: 1.28;
+  line-height: 1.225;
+}
+.dual-page-two .dual-individual-text {
+  display: block;
+  transform: translateY(-.65mm) scaleX(1.002);
+  transform-origin: left top;
+}
+.dual-page-two .dual-individual-extra-row + .dual-individual-row .dual-individual-text {
+  transform: translateY(-.81mm) scaleX(1.006);
 }
 .dual-individual-extra-row td {
   height: 15.35mm;
   text-align: left;
   vertical-align: top;
 }
+.dual-page-two .dual-individual-extra-row:not(:has(+ .dual-spacer-row)) td {
+  height: 16.06mm;
+}
+.dual-page-two .dual-individual-extra-row:has(+ .dual-spacer-row) td {
+  height: 14.82mm;
+}
+.dual-page-two .dual-individual-extra-row td {
+  font-size: 10pt;
+  line-height: 1.225;
+}
+.dual-page-two .dual-individual-extra-text {
+  display: block;
+  transform: translateY(1.55mm);
+}
+.dual-page-two .dual-individual-extra-row:has(+ .dual-spacer-row) .dual-individual-extra-text {
+  transform: translateY(1.28mm);
+}
+.dual-page-two .dual-individual-extra-row:not(:has(+ .dual-spacer-row)) .stacked-label {
+  transform: translateY(.26mm);
+}
+.dual-page-two .dual-individual-extra-row:has(+ .dual-spacer-row) .stacked-label {
+  transform: translateY(.52mm);
+}
 .dual-spacer-row td {
-  height: 5mm;
+  height: 1.1mm;
   border-left: 0;
   border-right: 0;
 }
@@ -1893,11 +2271,19 @@ textarea { resize: vertical; line-height: 1.55; }
   transform-origin: center;
 }
 .special-attendee-page .attendee-title-text {
-  transform: translate(.21mm, 1.2mm) scaleX(.95);
+  transform: translate(.21mm, .9mm) scaleX(.95);
 }
-.msds-sheet .attendee-title-text,
+.special-attendee-page {
+  padding-top: 15.56mm;
+}
 .special-worker-sheet .attendee-title-text {
-  transform: translate(.21mm, 1.6mm) scaleX(.95);
+  transform: translate(.21mm, .65mm) scaleX(.95);
+}
+.dual-continuation-sheet .attendee-title-text {
+  transform: translate(.21mm, 3.6mm) scaleX(.95);
+}
+.msds-sheet .attendee-title-text {
+  transform: translate(.21mm, .65mm) scaleX(.95);
 }
 .attendee-header-row th,
 .attendee-data-row td {
@@ -1914,6 +2300,9 @@ textarea { resize: vertical; line-height: 1.55; }
 }
 .attendee-page .attendee-header-text {
   transform: translateY(.25mm);
+}
+.special-attendee-page .attendee-header-text {
+  transform: translate(.82mm, -.38mm);
 }
 .attendee-data-row td {
   text-align: left;
@@ -1951,11 +2340,23 @@ textarea { resize: vertical; line-height: 1.55; }
   top: calc(64% - .69mm);
 }
 .special-worker-sheet .attendee-empty-mark {
-  top: calc(64% - 1.37mm);
-  transform: translate(-50%, -50%) skewX(-8deg) scaleX(1.318);
+  left: calc(50% + .86mm);
+  top: calc(64% - 2.68mm);
+  font-size: 45.5pt;
+  transform: translate(-50%, -50%) skewX(-8deg) scaleX(1.379);
+}
+.special-worker-sheet .attendee-tail-seq {
+  display: inline-block;
+  color: #595959;
+  font-size: 8pt;
+  transform: translate(-14.3mm, -2.23mm);
+}
+.special-worker-sheet .attendee-data-row:last-child .name-cell:first-child .attendee-tail-seq {
+  transform: translate(-15.6mm, -2.23mm);
 }
 .dual-continuation-sheet .attendee-empty-mark {
-  top: calc(27.5% - .85mm);
+  left: calc(50% + .95mm);
+  top: calc(27.5% + 2.1mm);
 }
 .special-attendee-marked-page .attendee-block-row > td::before {
   border-top: var(--report-border);
@@ -1966,19 +2367,29 @@ textarea { resize: vertical; line-height: 1.55; }
   top: .33mm;
 }
 .special-attendee-marked-page .attendee-empty-mark {
-  top: calc(14.5% - .85mm);
+  left: calc(50% + .95mm);
+  top: calc(14.5% - 1.41mm);
 }
 .special-worker-inline-sheet .attendee-empty-mark {
-  font-size: 19pt;
-  left: 50%;
-  top: 80%;
+  font-size: 14.9pt;
+  left: calc(50% - 10.28mm);
+  top: calc(80% + 2mm);
   transform: translate(-50%, -50%) skewX(-8deg) scaleX(1.2);
+}
+.special-worker-inline-sheet .attendee-block-row > td {
+  overflow: visible;
+}
+.special-inline-sheet .special-individual-extra-row > td {
+  overflow: visible;
 }
 .attendee-page .attendee-title-row th,
 .dual-continuation-sheet .attendee-title-row th,
 .attendee-page .attendee-header-row th,
 .dual-continuation-sheet .attendee-header-row th {
   height: 8.8mm;
+}
+.dual-continuation-sheet .attendee-title-row th {
+  height: 14.65mm;
 }
 .attendee-page .attendee-data-row td {
   height: 8.47mm;
@@ -1993,7 +2404,7 @@ textarea { resize: vertical; line-height: 1.55; }
   border-bottom: .96pt solid #000;
 }
 .dual-continuation-sheet .attendee-data-row td {
-  height: 8.43mm;
+  height: 8.89mm;
 }
 .dual-tail-attendee-row > td {
   border: 0;
@@ -2192,6 +2603,469 @@ textarea { resize: vertical; line-height: 1.55; }
   height: 100%;
   object-fit: contain;
   width: 100%;
+}
+
+.sheet-grid th,
+.sheet-grid td,
+.approval-grid th,
+.approval-grid td,
+.time-grid th,
+.time-grid td,
+.sheet-trade-grid td,
+.attachment-header-table th,
+.attachment-header-table td,
+.attachment-slot figcaption,
+.photo-board-project,
+.photo-board-title,
+.certificate-sheet-title {
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.sheet-grid span,
+.sheet-grid div,
+.attachment-page span,
+.attachment-page strong,
+.attachment-page figcaption {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.sheet-trade-grid td {
+  font-size: 11pt;
+  line-height: 1.05;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.dual-special-sheet .sheet-trade-grid col:nth-child(1),
+.dual-special-sheet .sheet-trade-grid col:nth-child(2) {
+  width: 34.48% !important;
+}
+
+.dual-special-sheet .sheet-trade-grid col:nth-child(3) {
+  width: 31.04% !important;
+}
+
+.sheet-trade-grid .top-info-value,
+.target-value-text,
+.course-value-text,
+.field-value-text,
+.material-value-text,
+.special-task-text,
+.regular-content-text,
+.special-common-text,
+.special-individual-text,
+.special-one-content-text,
+.attendee-grid .name-cell {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.sheet-trade-grid .top-info-value {
+  display: block;
+  width: 100%;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.dual-special-sheet .sheet-trade-grid .top-info-value {
+  transform: translateY(.22mm) scaleX(.978);
+  transform-origin: center;
+}
+
+.dual-special-sheet .sheet-trade-grid td:first-child .top-info-value {
+  transform: translate(.1mm, .22mm) scaleX(.978);
+}
+
+.dual-special-sheet .sheet-trade-grid td:nth-child(2) .top-info-value {
+  transform: translate(.5mm, .22mm) scaleX(.978);
+}
+
+.sheet-trade-grid .trade-joined-3 {
+  font-size: 7pt;
+  transform: translateY(.74mm) scaleX(.86);
+  transform-origin: center;
+}
+
+.approval-role {
+  font-size: 9pt;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.approval-role-text {
+  max-width: 100%;
+}
+
+.attendee-grid .name-cell {
+  font-size: 11pt;
+  white-space: normal;
+}
+.attendee-name-text {
+  display: inline-block;
+}
+.routine-regular-sheet .attendee-name-text,
+.special-attendee-page .attendee-name-text {
+  transform: translateY(.37mm);
+}
+.routine-attachment-sheet .attendee-name-text {
+  font-family: var(--report-label);
+  transform: translateY(-.11mm);
+}
+.routine-attachment-sheet .attendee-header-row + .attendee-data-row .name-cell:nth-child(8) .attendee-name-text {
+  font-family: var(--report-serif);
+  transform: translateY(.37mm);
+}
+.short-regular-sheet .attendee-name-text,
+.supervisor-sheet:not(.supervisor-annual-sheet) .attendee-name-text {
+  transform: translateY(1mm);
+}
+.supervisor-annual-sheet .attendee-name-text {
+  transform: translateY(.48mm);
+}
+.management-inline-sheet .attendee-name-text {
+  transform: translateY(.62mm);
+}
+.special-worker-inline-sheet .attendee-name-text {
+  transform: translateY(.18mm);
+}
+.special-worker-long-inline-sheet .attendee-name-text {
+  transform: translateY(.08mm);
+}
+.dual-continuation-sheet .attendee-name-text {
+  transform: translateY(.28mm);
+}
+.special-worker-sheet .attendee-name-text {
+  transform: translateY(.26mm);
+}
+.special-one-page-sheet .attendee-name-text {
+  transform: translateY(.38mm);
+}
+.management-inline-sheet .approval-role-text {
+  transform: translate(.38mm, .46mm);
+}
+.special-worker-inline-sheet .approval-role-text {
+  transform: translate(.38mm, .19mm);
+}
+.special-worker-sheet .approval-role-text,
+.msds-sheet .approval-role-text {
+  transform: translate(.38mm, -.08mm);
+}
+.special-one-page-sheet .approval-role-text {
+  transform: translate(.38mm, -.34mm);
+}
+.heat-special-one-page-sheet .special-instructor-row td:last-child .field-value-text {
+  transform: translate(.36mm, -.235mm);
+}
+
+.special-one-page-sheet .sheet-date-row > th[colspan="5"] .distributed-label {
+  transform: translateY(-.05mm);
+}
+.special-one-page-sheet .special-count-row > th[colspan="5"] .distributed-label,
+.special-one-page-sheet .special-time-row > th[colspan="5"] .distributed-label,
+.special-one-page-sheet .special-instructor-row > th[colspan="5"] .distributed-label,
+.special-one-page-sheet .special-method-row > th[colspan="5"] .distributed-label {
+  transform: translateY(-.58mm);
+}
+
+.regular-sheet.msds-sheet .sheet-date-row.sheet-row-info > th[colspan="5"] .distributed-label,
+.regular-sheet.msds-sheet .sheet-trade-row.sheet-row-info > th[colspan="5"] .distributed-label {
+  transform: translateY(-.05mm);
+}
+.msds-sheet .sheet-date-row .date-value-text,
+.msds-sheet .sheet-trade-grid .top-info-value {
+  transform: translateY(.51mm);
+}
+.regular-sheet.msds-sheet .sheet-course-row.sheet-row-info > th:first-child .distributed-label {
+  transform: translateY(-.24mm);
+}
+.regular-sheet.msds-sheet .sheet-course-row.sheet-row-info > th[colspan="4"] .distributed-label {
+  transform: translate(-.42mm, -.32mm);
+}
+.msds-sheet .top-info-value-light {
+  transform: translate(.56mm, .24mm) scaleX(.98);
+}
+.regular-sheet.msds-sheet .sheet-row-info:has(> .target-cell) > th[colspan="5"] .distributed-label,
+.regular-sheet.msds-sheet .sheet-row-info:has(> .count-cell) > th[colspan="5"] .distributed-label,
+.regular-sheet.msds-sheet .sheet-row-info:has(> .time-box-cell) > th[colspan="5"] .distributed-label {
+  transform: translateY(-.32mm);
+}
+.msds-sheet .count-value-text {
+  transform: translate(.52mm, .35mm) scaleX(.952);
+}
+.msds-sheet .total-time-cell span {
+  transform: translateY(.24mm);
+}
+.msds-sheet .time-grid th span {
+  transform: translateY(-.06mm);
+}
+.regular-sheet.msds-sheet .regular-instructor-row.sheet-row-info > th[colspan="5"] .distributed-label {
+  transform: translateY(-.57mm);
+}
+.regular-sheet.msds-sheet .regular-instructor-row td .field-value-text {
+  transform: translate(.51mm, -.01mm) scaleX(.977);
+}
+.msds-sheet .regular-instructor-row td:last-child .field-value-text {
+  transform: translate(.8mm, -.01mm) scaleX(.977);
+}
+.regular-sheet.msds-sheet .sheet-row-info:has(> .material-cell) > th[colspan="5"] .distributed-label,
+.regular-sheet.msds-sheet .sheet-row-info:has(> .regular-target-fill) > th[colspan="5"] .distributed-label {
+  transform: translateY(-.31mm);
+}
+.msds-sheet .sheet-row-info:has(> .material-cell) .field-value-text {
+  transform: translate(.25mm, .25mm);
+}
+.msds-sheet .material-value-text {
+  transform: translate(.4mm, .26mm) scaleX(.973);
+}
+
+.special-worker-inline-sheet .sheet-trade-grid .top-info-value {
+  transform: translateY(.43mm);
+}
+.special-worker-inline-sheet .sheet-course-row > th:first-child .distributed-label,
+.special-worker-inline-sheet .sheet-course-row > th[colspan="4"] .distributed-label {
+  transform: translateY(-.37mm);
+}
+.special-worker-inline-sheet .sheet-course-row > th[colspan="4"] .distributed-label {
+  transform: translate(-.42mm, -.37mm);
+}
+.special-worker-inline-sheet .course-value-text {
+  transform: translateY(.21mm);
+}
+.special-worker-inline-sheet .top-info-value-light {
+  transform: translate(1.3mm, .19mm) scaleX(.992);
+}
+.management-inline-sheet .top-info-value-light {
+  transform: translate(1.3mm, .46mm) scaleX(.992);
+}
+.special-worker-inline-sheet .special-target > th[colspan="5"] .distributed-label {
+  transform: translateY(-.19mm);
+}
+.special-worker-inline-sheet .special-count-row > th[colspan="5"] .distributed-label {
+  transform: translateY(-.01mm);
+}
+.special-worker-inline-sheet .special-count-row .count-value-text {
+  transform: translate(.36mm, .63mm) scaleX(.952);
+}
+.special-worker-inline-sheet .special-time-row > th[colspan="5"] .distributed-label {
+  transform: translateY(-.23mm);
+}
+.special-worker-inline-sheet .total-time-cell span {
+  transform: translateY(.33mm);
+}
+.special-worker-inline-sheet .time-grid {
+  --time-value-y: .6mm;
+}
+.special-worker-inline-sheet .special-instructor-row > th[colspan="5"] .distributed-label {
+  transform: translateY(-.47mm);
+}
+.special-worker-inline-sheet .special-instructor-row td .field-value-text {
+  transform: translate(.51mm, .1mm) scaleX(.977);
+}
+.special-worker-inline-sheet .special-instructor-row td:last-child .field-value-text {
+  transform: translate(.8mm, .1mm) scaleX(.977);
+}
+.special-worker-inline-sheet .special-method-row > th[colspan="5"] .distributed-label {
+  transform: translateY(-.43mm);
+}
+.special-worker-inline-sheet .special-method-row .field-value-text {
+  transform: translate(.25mm, .13mm);
+}
+.special-worker-inline-sheet .special-method-row .material-value-text {
+  transform: translate(.4mm, .13mm) scaleX(.973);
+}
+.sheet-grid .material-cell {
+  text-align: center !important;
+  vertical-align: middle !important;
+  padding-left: .55mm !important;
+  padding-right: .55mm !important;
+}
+.sheet-grid .material-cell .material-value-text {
+  transform: scaleX(.973);
+}
+.special-worker-inline-sheet .special-task-label-text {
+  display: inline-block;
+  transform: translateY(-.33mm);
+}
+.special-worker-inline-sheet .special-content-label-text {
+  display: inline-block;
+  transform: translateY(-.53mm);
+}
+.special-worker-inline-sheet .special-common-row .stacked-label {
+  transform: translateY(-.43mm);
+}
+.special-worker-inline-sheet .special-individual-row .stacked-label {
+  transform: translateY(-.59mm);
+}
+.special-worker-inline-sheet .special-extra-row .stacked-label {
+  transform: translateY(calc(-50% - .66mm));
+}
+.special-worker-inline-sheet .attendee-header-text {
+  transform: translateY(-.44mm);
+}
+.special-worker-long-inline-sheet .attendee-header-text {
+  transform: translateY(-.51mm);
+}
+.special-worker-inline-sheet .time-grid th span {
+  transform: translateY(.03mm);
+}
+.special-worker-sheet .total-time-cell span {
+  transform: translateY(.24mm);
+}
+.special-worker-sheet .target-value-text {
+  transform: translateY(.11mm);
+}
+.management-inline-sheet .target-value-text {
+  display: inline-block;
+  transform: translateY(.373mm);
+  transform-origin: left center;
+}
+.special-worker-inline-sheet .target-value-text {
+  display: inline-block;
+  transform: translateY(.23mm);
+  transform-origin: left center;
+}
+
+.special-sheet:not(.special-inline-sheet):not(.special-one-page-sheet) .top-info-value-light {
+  transform: translate(1.3mm, .46mm) scaleX(.992);
+}
+.special-sheet:not(.special-inline-sheet):not(.special-one-page-sheet) .target-value-text {
+  transform: translate(-1.32mm, .56mm);
+  transform-origin: left center;
+}
+.target-fixed-line {
+  display: inline-block;
+  white-space: nowrap;
+}
+.dual-special-sheet .target-fixed-line + br + .target-fixed-line {
+  transform: scaleX(.996);
+  transform-origin: left center;
+}
+.special-sheet:not(.special-inline-sheet):not(.special-one-page-sheet) .target-fixed-line {
+  font-size: 11.15pt;
+  transform: translate(.054mm, -.04mm) scaleX(.981);
+  transform-origin: left center;
+}
+.special-sheet:not(.special-inline-sheet):not(.special-one-page-sheet) .target-fixed-line + br + .target-fixed-line {
+  transform: translate(.054mm, -.04mm) scaleX(.970);
+}
+.special-sheet:not(.special-inline-sheet):not(.special-one-page-sheet) .target-fixed-line + br + .target-fixed-line:last-child {
+  transform: translate(.054mm, -.335mm) scaleX(.976);
+}
+.regular-sheet:not(.special-worker-sheet):not(.msds-sheet) .attendee-header-text {
+  transform: translateY(-.64mm);
+}
+.regular-sheet.supervisor-sheet:not(.supervisor-annual-sheet) .attendee-header-text {
+  transform: translateY(.12mm);
+}
+.special-worker-sheet .attendee-header-text {
+  transform: translateY(-.29mm);
+}
+.msds-sheet .attendee-header-text {
+  transform: translateY(-.12mm);
+}
+.special-one-page-sheet .attendee-header-text {
+  transform: translateY(-.35mm);
+}
+.special-one-content-row .stacked-label {
+  transform: translateY(-.31mm);
+}
+.routine-regular-sheet .regular-content-label-text {
+  transform: translateY(-.04mm);
+}
+.management-inline-sheet .total-time-cell span {
+  transform: translateY(.5mm);
+}
+
+.special-task-text {
+  width: calc(100% - 5.5mm);
+  transform: translateY(.88mm);
+}
+
+.time-grid td.time-sep {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.time-grid td span {
+  transform: translateY(var(--time-value-y, .67mm)) scaleX(1.03);
+}
+.time-grid th span {
+  transform: translateY(.11mm);
+}
+.management-inline-sheet .time-grid {
+  --time-value-y: .76mm;
+}
+.time-grid td.time-sep span {
+  transform: translateY(calc(var(--time-value-y, .67mm) + .17mm)) scaleX(1.03);
+}
+.time-grid td.time-sep:nth-of-type(2) span {
+  transform: translate(.31mm, calc(var(--time-value-y, .67mm) + .17mm)) scaleX(1.03);
+}
+.time-grid td.time-sep:nth-of-type(5) span {
+  transform: translate(.49mm, calc(var(--time-value-y, .67mm) + .17mm)) scaleX(1.03);
+}
+.dual-page-one .time-grid td.time-sep span {
+  transform: translateY(calc(var(--time-value-y) + .17mm)) scaleX(1.023);
+}
+.dual-page-one .time-grid td.time-sep:nth-of-type(2) span {
+  transform: translate(.31mm, calc(var(--time-value-y) + .17mm)) scaleX(1.023);
+}
+.dual-page-one .time-grid td.time-sep:nth-of-type(5) span {
+  transform: translate(.49mm, calc(var(--time-value-y) + .17mm)) scaleX(1.023);
+}
+
+.msds-sheet .regular-content-label-text,
+.msds-sheet .regular-extra-label-text {
+  letter-spacing: 2.8mm;
+}
+
+.msds-sheet .regular-content-label-text {
+  transform: translate(1.4mm, -.085mm);
+}
+
+.msds-sheet .regular-extra-label-text {
+  transform: translate(1.4mm, .2mm);
+}
+
+.special-one-page-sheet .course-fill {
+  font-size: 11pt;
+}
+
+.special-one-page-sheet .course-value-text {
+  transform: translateY(.39mm);
+  overflow-wrap: normal;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.special-one-page-sheet .project-cell-text {
+  transform: translateY(.4mm) scaleX(1.043);
+}
+
+.special-sheet:not(.special-one-page-sheet) .special-task-text {
+  transform: translateY(.88mm) scaleX(1.034);
+  transform-origin: left center;
+}
+
+.special-sheet.special-worker-inline-sheet .special-task-text {
+  transform: translateY(.32mm) scaleX(1.034);
+}
+.heat-special-one-page-sheet .course-value-text {
+  transform: translateY(.39mm);
+}
+
+.heat-special-one-page-sheet .course-fill {
+  font-size: 12pt;
+}
+
+.special-sheet:not(.special-inline-sheet) .special-common-text {
+  transform: none;
 }
 
 .settings-grid {
@@ -2726,6 +3600,189 @@ textarea { resize: vertical; line-height: 1.55; }
   }
   .preview { padding: 10px; overflow-x: auto; }
   .preview .paper { width: 100%; padding: 18px; }
+}
+
+@media screen and (min-width: 721px) {
+  .preview .paper {
+    width: 760px;
+    max-width: none;
+    padding: 53.46px 26.97px 32.57px 47.95px;
+  }
+  .special-one-page-sheet:not(.heat-special-one-page-sheet) .course-value-text {
+    max-width: none;
+    transform: translate(-.9mm, .39mm) scaleX(.92);
+    transform-origin: center;
+  }
+}
+
+:root {
+  --motion-fast: 180ms;
+  --motion-panel: 240ms;
+  --motion-view: 280ms;
+  --motion-ease: cubic-bezier(.2, .8, .2, 1);
+  --workspace-document: 960px;
+  --workspace-settings: 1520px;
+  --workspace-records: 1280px;
+  --workspace-stats: 1560px;
+  --preview-compact-scale: .78;
+  --preview-tight-scale: .67;
+  --preview-narrow-scale: .70;
+  --empty-table-padding-block: 32px;
+  --empty-table-padding-inline: 10px;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.editor section:hover,
+#view-settings .settings-grid label:hover,
+#view-settings .db-panel:hover,
+#view-stats .stats-cards div:hover,
+#view-stats .table-panel:hover,
+.db-row:hover,
+.content-row:hover,
+.record-row:hover {
+  background: var(--paper);
+  border-color: var(--line);
+  box-shadow: none;
+  transform: none;
+}
+
+.workspace.active:not(#view-write) > *,
+#view-settings.workspace.active .settings-grid label,
+#view-settings.workspace.active .db-row,
+#view-settings.workspace.active .content-row,
+#view-records.workspace.active .record-row,
+#view-stats.workspace.active .stats-cards div,
+#view-stats.workspace.active .table-panel,
+#view-stats.workspace.active tbody tr {
+  animation: none;
+}
+
+.editor [data-form-panel],
+#view-settings.workspace.active [data-settings-section],
+#view-stats.workspace.active [data-stats-section] {
+  animation: panel-focus var(--motion-panel) var(--motion-ease) backwards;
+}
+
+#view-document.workspace.active > .topbar,
+#view-settings.workspace.active > .topbar,
+#view-records.workspace.active > .topbar,
+#view-stats.workspace.active > .topbar {
+  animation: panel-slide-right var(--motion-view) var(--motion-ease) backwards;
+}
+
+#view-settings.workspace.active > .settings-switcher,
+#view-stats.workspace.active > .stats-switcher {
+  animation: panel-focus var(--motion-panel) var(--motion-ease) .02s backwards;
+}
+
+#view-settings.workspace.active > .settings-grid,
+#view-stats.workspace.active > .stats-cards {
+  animation: panel-rise var(--motion-panel) var(--motion-ease) .03s backwards;
+}
+
+#view-document.workspace.active > .document-settings-panel,
+#view-settings.workspace.active > .db-panel,
+#view-records.workspace.active > .record-list,
+#view-stats.workspace.active > .stats-layout {
+  animation: panel-lift var(--motion-panel) var(--motion-ease) .06s backwards;
+}
+
+.record-list:has(.record-empty) {
+  display: grid;
+  min-height: 320px;
+  place-items: center;
+}
+
+.record-empty {
+  border: 0;
+  display: grid;
+  place-items: center;
+  min-height: 320px;
+  padding: 0;
+  text-align: center;
+  width: 100%;
+}
+
+.record-empty strong {
+  color: var(--muted);
+}
+
+.table-panel tbody td[colspan] {
+  color: var(--muted);
+  padding: var(--empty-table-padding-block) var(--empty-table-padding-inline);
+  text-align: center;
+}
+
+@media screen and (min-width: 1220px) {
+  #view-document.workspace.active {
+    max-width: var(--workspace-document);
+    margin-inline: auto;
+  }
+  #view-document .document-settings-panel {
+    margin-inline: auto;
+  }
+  #view-settings.workspace.active {
+    max-width: var(--workspace-settings);
+    margin-inline: auto;
+  }
+  #view-records.workspace.active {
+    max-width: var(--workspace-records);
+  }
+  #view-stats.workspace.active {
+    max-width: var(--workspace-stats);
+    margin-inline: auto;
+  }
+}
+
+@media screen and (min-width: 1220px) and (max-width: 1499px) {
+  #view-settings .course-row {
+    grid-template-columns: 76px 110px minmax(140px, .75fr) minmax(260px, 1.45fr) minmax(120px, .7fr) 90px 90px;
+  }
+}
+
+@media screen and (min-width: 721px) and (max-width: 1219px) {
+  #view-write .preview .paper {
+    margin-inline: auto;
+    zoom: var(--preview-compact-scale);
+  }
+}
+
+@media screen and (min-width: 1220px) and (max-width: 1259px) {
+  #view-write .preview .paper {
+    margin-inline: auto;
+    zoom: var(--preview-tight-scale);
+  }
+}
+
+@media screen and (min-width: 1260px) and (max-width: 1350px) {
+  #view-write .preview .paper {
+    margin-inline: auto;
+    zoom: var(--preview-narrow-scale);
+  }
+}
+
+@media screen and (min-width: 1351px) and (max-width: 1499px) {
+  #view-write .preview .paper {
+    margin-inline: auto;
+    zoom: var(--preview-compact-scale);
+  }
+}
+
+@media screen and (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @page { size: A4; margin: 0; }

@@ -6,6 +6,7 @@ import hashlib
 import mimetypes
 import os
 import re
+import shutil
 import subprocess
 import sqlite3
 import sys
@@ -16,15 +17,15 @@ import zipfile
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from urllib.parse import parse_qs, urljoin, urlparse
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from urllib import request
 from xml.etree import ElementTree as ET
 
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 STATIC_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR)) / "static"
 DB_PATH = APP_DIR / "education_log.db"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 DEFAULT_UPDATE_MANIFEST_URL = "https://github.com/dusdk0098-tech/education-log-local-app/releases/latest/download/update.json"
 DEFAULT_XLSM = Path(
     r"C:\Users\user\Desktop\북평택교육\안전보건교육일지 (2023.09.27 개정 기준) 카페업로드용 2026-03-06 (수정).xlsm"
@@ -71,14 +72,14 @@ DEFAULT_COURSE_ROWS = [
 COURSE_DISPLAY_TARGET_OVERRIDES = {
     "50-2": "2)그 밖의 근로자 - 가) 판매업무에 직접 종사하는 근로자",
     "50-3": "2)그 밖의 근로자 - 나) 판매업무에 직접 종사하는 근자외의 근로자",
-    "71": "특수형태근로종사자 최초 노무 제공 시 교육 - 단기간 작업 또는 간헐적 작업에 노무를 제공하는 경우",
     "1-39)71)": "특수형태근로종사자 특별교육 - 단기간 작업 또는 간헐적 작업에 노무를 제공하는 경우",
 }
+TARGET_FIXED_BREAK_SHEETS = {"1-39(2-2)", "1-39(2-3)", "1-39(4)"}
 DEFAULT_COURSES = [
     (*row, COURSE_DISPLAY_TARGET_OVERRIDES.get(row[0], row[3]))
     for row in DEFAULT_COURSE_ROWS
 ]
-COURSE_DEFAULTS_VERSION = "2026-07-09-original-course-db-v8-display-target-context"
+COURSE_DEFAULTS_VERSION = "2026-07-09-original-course-db-v9-print-target-71"
 CONTENT_DEFAULTS_VERSION = "2026-07-08-original-content-db-v2"
 WORKER_TARGETS_VERSION = "2026-07-09-display-course-targets-v1"
 
@@ -177,15 +178,6 @@ def init_db() -> None:
         ensure_worker_training_schema(con)
         ensure_courses_schema(con)
         course_defaults = load_course_defaults()
-        for row in course_defaults:
-            con.execute(
-                """
-                INSERT OR IGNORE INTO courses
-                  (sheet, category, name, target, legal_hours, template, content_code, display_target)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                row,
-            )
         sync_default_courses(con, course_defaults)
         imported = import_xlsm_db_rows(DEFAULT_XLSM) if DEFAULT_XLSM.exists() else []
         sync_default_content(con, imported or FALLBACK_CONTENT)
@@ -200,7 +192,7 @@ def sync_default_courses(con: sqlite3.Connection, course_defaults: list[tuple[st
     for row in course_defaults or load_course_defaults():
         con.execute(
             """
-            INSERT OR REPLACE INTO courses
+            INSERT OR IGNORE INTO courses
               (sheet, category, name, target, legal_hours, template, content_code, display_target)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -213,10 +205,9 @@ def sync_default_content(con: sqlite3.Connection, content_rows: list[tuple[str, 
     current = con.execute("SELECT value FROM settings WHERE key=?", ("contentDefaultsVersion",)).fetchone()
     if current and current["value"] == CONTENT_DEFAULTS_VERSION:
         return
-    con.execute("DELETE FROM education_content WHERE code='' OR code GLOB '*[^0-9]*'")
     for row in content_rows:
         if row[0] and row[1]:
-            con.execute("INSERT OR REPLACE INTO education_content VALUES (?, ?, ?)", row)
+            con.execute("INSERT OR IGNORE INTO education_content VALUES (?, ?, ?)", row)
     con.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", ("contentDefaultsVersion", CONTENT_DEFAULTS_VERSION))
 
 
@@ -462,6 +453,42 @@ def is_newer_version(latest: str, current: str = APP_VERSION) -> bool:
     return version_key(latest) > version_key(current)
 
 
+def is_trusted_update_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "github.com"
+            or parsed.port not in (None, 443)
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            return False
+        path = parsed.path
+        if "%" in path or "\\" in path or unquote(path) != path:
+            return False
+        prefix = "/dusdk0098-tech/education-log-local-app/releases/"
+        if not path.startswith(prefix):
+            return False
+        parts = path[len(prefix):].split("/")
+        return (
+            len(parts) == 3
+            and all(parts)
+            and all(part not in (".", "..") for part in parts)
+            and (
+                parts[0:2] == ["latest", "download"]
+                or parts[0] == "download"
+            )
+        )
+    except ValueError:
+        return False
+
+
+def is_valid_sha256(value: str) -> bool:
+    return bool(re.fullmatch(r"[0-9a-fA-F]{64}", value.strip()))
+
+
 def fetch_json(url: str) -> dict:
     req = request.Request(url, headers={"User-Agent": f"LocalEducationLogApp/{APP_VERSION}"})
     with request.urlopen(req, timeout=10) as res:
@@ -487,19 +514,27 @@ def check_update(manifest_url: str = "") -> dict:
     }
     if not url:
         return result
+    if not is_trusted_update_url(url):
+        result["message"] = "승인된 GitHub 업데이트 주소만 사용할 수 있습니다."
+        return result
     manifest = fetch_json(url)
     latest = str(manifest.get("version") or "").strip()
     zip_url = str(manifest.get("zip_url") or manifest.get("url") or "").strip()
+    sha256 = str(manifest.get("sha256") or "").strip()
     if latest:
         result["latestVersion"] = latest
     if zip_url:
         result["zipUrl"] = urljoin(url, zip_url)
     result["notes"] = str(manifest.get("notes") or "")
-    result["sha256"] = str(manifest.get("sha256") or "")
-    result["available"] = bool(latest and zip_url and is_newer_version(latest))
+    result["sha256"] = sha256
     if latest and not zip_url:
         result["message"] = "업데이트 파일 URL이 없습니다."
+    elif zip_url and not is_trusted_update_url(result["zipUrl"]):
+        result["message"] = "승인된 GitHub 릴리스 파일만 사용할 수 있습니다."
+    elif latest and not is_valid_sha256(sha256):
+        result["message"] = "업데이트 파일 검증값이 올바르지 않습니다."
     else:
+        result["available"] = bool(latest and zip_url and is_newer_version(latest))
         result["message"] = "새 업데이트가 있습니다." if result["available"] else "현재 최신 버전입니다."
     return result
 
@@ -510,35 +545,46 @@ def download_update_zip(url: str, target: Path) -> None:
         target.write_bytes(res.read())
 
 
+def validate_update_zip_member(name: str) -> None:
+    normalized = name.replace("\\", "/")
+    posix_path = PurePosixPath(normalized)
+    windows_path = PureWindowsPath(name)
+    if (
+        not normalized
+        or "\x00" in name
+        or normalized.startswith("/")
+        or posix_path.is_absolute()
+        or windows_path.drive
+        or windows_path.root
+        or ".." in posix_path.parts
+    ):
+        raise RuntimeError("업데이트 압축 파일에 허용되지 않는 경로가 있습니다.")
+
+
 def validate_update_zip(zip_path: Path) -> None:
     with zipfile.ZipFile(zip_path) as zf:
         for info in zf.infolist():
-            name = info.filename.replace("\\", "/")
-            path = Path(name)
-            if info.is_dir():
-                continue
-            if path.is_absolute() or ".." in path.parts:
-                raise RuntimeError("업데이트 압축 파일에 허용되지 않는 경로가 있습니다.")
+            validate_update_zip_member(info.filename)
 
 
-def update_source_dir(extract_dir: Path) -> Path:
-    if (extract_dir / "server.py").is_file():
+def update_runtime_dir(extract_dir: Path) -> Path:
+    if (extract_dir / "PEDIT-EDU.exe").is_file():
         return extract_dir
     children = [path for path in extract_dir.iterdir() if path.is_dir()]
-    if len(children) == 1 and (children[0] / "server.py").is_file():
+    if len(children) == 1 and (children[0] / "PEDIT-EDU.exe").is_file():
         return children[0]
-    raise RuntimeError("업데이트 압축 파일에서 server.py를 찾지 못했습니다.")
+    raise RuntimeError("업데이트 압축 파일에서 PEDIT-EDU.exe를 찾지 못했습니다.")
 
 
 def verify_sha256(path: Path, expected: str) -> None:
-    if not expected:
-        return
+    if not is_valid_sha256(expected):
+        raise RuntimeError("업데이트 파일 검증값이 올바르지 않습니다.")
     actual = hashlib.sha256(path.read_bytes()).hexdigest().lower()
     if actual != expected.lower():
         raise RuntimeError("업데이트 파일 검증에 실패했습니다.")
 
 
-def write_update_batch(source_dir: Path, temp_dir: Path) -> Path:
+def write_update_batch(runtime_dir: Path, temp_dir: Path) -> Path:
     script = temp_dir / "apply_update.bat"
     log_path = temp_dir / "update.log"
     script.write_text(
@@ -548,7 +594,7 @@ def write_update_batch(source_dir: Path, temp_dir: Path) -> Path:
                 "chcp 65001 >nul",
                 "setlocal",
                 f'set "APP_DIR={APP_DIR}"',
-                f'set "SRC_DIR={source_dir}"',
+                f'set "SRC_DIR={runtime_dir}"',
                 f'set "LOG_PATH={log_path}"',
                 f'set "APP_PID={os.getpid()}"',
                 ":wait_app",
@@ -563,7 +609,7 @@ def write_update_batch(source_dir: Path, temp_dir: Path) -> Path:
                 "  pause",
                 "  exit /b %ERRORLEVEL%",
                 ")",
-                'start "" "%APP_DIR%\\run_app.bat"',
+                'start "" "%APP_DIR%\\PEDIT-EDU.exe"',
                 "endlocal",
             ]
         )
@@ -587,10 +633,22 @@ def apply_update(manifest_url: str = "") -> dict:
     validate_update_zip(zip_path)
     with zipfile.ZipFile(zip_path) as zf:
         zf.extractall(extract_dir)
-    source_dir = update_source_dir(extract_dir)
-    script = write_update_batch(source_dir, temp_dir)
+    runtime_dir = update_runtime_dir(extract_dir)
+    script = write_update_batch(runtime_dir, temp_dir)
     subprocess.Popen(["cmd.exe", "/c", "start", "", str(script)], close_fds=True)
     return {**info, "updating": True}
+
+
+def apply_startup_update() -> bool:
+    if not getattr(sys, "frozen", False):
+        return False
+    try:
+        if not update_config()["autoUpdateEnabled"]:
+            return False
+        return bool(apply_update().get("updating"))
+    except Exception as error:
+        print(f"자동 업데이트 확인 실패: {error}")
+        return False
 
 
 def update_error(error: Exception, manifest_url: str = "") -> dict:
@@ -649,18 +707,28 @@ def clear_reports() -> dict:
 
 
 def export_report_pdf(payload: dict, report_id: int, title: str, save_dir: str) -> Path:
-    chrome = chrome_exe()
-    if not chrome:
-        raise RuntimeError("Chrome 또는 Edge를 찾지 못해 PDF 저장을 할 수 없습니다.")
     folder = Path(save_dir).expanduser()
     folder.mkdir(parents=True, exist_ok=True)
     safe_title = "".join(ch if ch.isalnum() or ch in " ._-" else "_" for ch in title).strip()[:80] or "교육일지"
     pdf_path = folder / f"{safe_title}_{report_id}.pdf"
+    write_report_pdf(payload, pdf_path)
+    return pdf_path
+
+
+def write_report_pdf(payload: dict, pdf_path: Path) -> None:
+    write_chrome_report_pdf(payload, pdf_path)
+
+
+def write_chrome_report_pdf(payload: dict, pdf_path: Path) -> None:
+    chrome = chrome_exe()
+    if not chrome:
+        raise RuntimeError("Chrome 또는 Edge를 찾지 못해 PDF 저장을 할 수 없습니다.")
+    stylesheet = (STATIC_DIR / "styles.css").resolve()
     html = (
         '<!doctype html><meta charset="utf-8">'
-        f'<link rel="stylesheet" href="{(STATIC_DIR / "styles.css").resolve().as_uri()}">'
+        f'<link rel="stylesheet" href="{stylesheet.as_uri()}">'
         f"<style>{pdf_font_face_style()}</style>"
-        f'<body><div class="preview">{render_report({**payload, "renderScope": "all"})}</div></body>'
+        f'<body><div class="preview">{render_report(payload)}</div></body>'
     )
     with tempfile.TemporaryDirectory() as tmp:
         html_path = Path(tmp) / "report.html"
@@ -678,7 +746,195 @@ def export_report_pdf(payload: dict, report_id: int, title: str, save_dir: str) 
             check=True,
             timeout=60,
         )
-    return pdf_path
+
+
+def write_excel_report_pdf(payload: dict, pdf_path: Path) -> None:
+    if os.name != "nt":
+        raise RuntimeError("Windows에서만 Excel 출력 경로를 사용할 수 있습니다.")
+    if not DEFAULT_XLSM.exists():
+        raise RuntimeError("원본 Excel 템플릿 파일을 찾지 못했습니다.")
+    if str(payload.get("renderScope") or "journal") not in ("all", "journal"):
+        raise RuntimeError("교육일지 외 탭은 Chrome 출력 경로를 사용합니다.")
+    if payload.get("photoAttachments") or payload.get("certificateAttachments"):
+        raise RuntimeError("첨부 출력은 Chrome 출력 경로를 사용합니다.")
+    sheet = str(payload.get("sheet") or "").strip()
+    if not sheet:
+        raise RuntimeError("Excel 출력용 sheet 값이 없습니다.")
+    import pythoncom
+    import win32com.client
+
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    pythoncom.CoInitialize()
+    excel = None
+    with tempfile.TemporaryDirectory() as tmp:
+        workbook_path = Path(tmp) / DEFAULT_XLSM.name
+        shutil.copy2(DEFAULT_XLSM, workbook_path)
+        try:
+            excel = win32com.client.DispatchEx("Excel.Application")
+            excel.Visible = False
+            excel.DisplayAlerts = False
+            excel.EnableEvents = False
+            excel.AskToUpdateLinks = False
+            excel.AutomationSecurity = 3
+            wb = excel.Workbooks.Open(
+                str(workbook_path),
+                UpdateLinks=0,
+                ReadOnly=False,
+                IgnoreReadOnlyRecommended=True,
+            )
+            try:
+                ws = excel_worksheet(wb, sheet)
+                fill_excel_payload(wb, ws, payload)
+                excel.CalculateFullRebuild()
+                ws.ExportAsFixedFormat(0, str(pdf_path.resolve()))
+            finally:
+                wb.Close(False)
+        finally:
+            if excel is not None:
+                excel.Quit()
+            pythoncom.CoUninitialize()
+
+
+def excel_worksheet(wb, sheet: str):
+    try:
+        return wb.Worksheets(sheet)
+    except Exception:
+        target = sheet.strip()
+        for index in range(1, wb.Worksheets.Count + 1):
+            ws = wb.Worksheets(index)
+            if str(ws.Name).strip() == target:
+                return ws
+        raise
+
+
+def fill_excel_payload(wb, ws, payload: dict) -> None:
+    try:
+        wb.Worksheets("안내").Range("C12").Value = excel_literal_text(payload.get("projectName"))
+    except Exception:
+        ws.Range("A4").Value = excel_literal_text(payload.get("projectName"))
+    date_value = str(payload.get("date") or "").strip()
+    if date_value:
+        ws.Range("AF8").Value2 = excel_date_serial(date_value)
+    headcount = str(payload.get("headcount") or payload.get("attendeeCount") or "").strip()
+    ws.Range("AF9").Value = int(float(headcount)) if headcount else ""
+    fill_excel_trades(ws, payload)
+    ws.Range("AF14").Value = number_or_blank(payload.get("session1Hours"))
+    ws.Range("AF15").Value = excel_time_or_blank(payload.get("session1Start"))
+    ws.Range("AF17").Value = number_or_blank(payload.get("session2Hours"))
+    ws.Range("AF18").Value = excel_time_or_blank(payload.get("session2Start")) if number_or_blank(payload.get("session2Hours")) != "" else ""
+    ws.Range("AF19").Value = excel_literal_text(payload.get("method"))
+    ws.Range("AF20").Value = excel_literal_text(payload.get("material"))
+    ws.Range("AF21").Value = excel_literal_text(payload.get("instructor"))
+    ws.Range("AF22").Value = excel_literal_text(payload.get("place"))
+    if str(payload.get("sheet") or "").strip() == "91":
+        start1 = excel_time_or_blank(payload.get("session1Start"))
+        hours1 = number_or_blank(payload.get("session1Hours"))
+        ws.Range("F12").Value = duration_label(completed_hours_value(payload))
+        ws.Range("M12").Value2 = start1
+        ws.Range("Q12").Value2 = (start1 + hours1 / 24) % 1 if start1 != "" and hours1 != "" else ""
+        ws.Range("T13").Value = excel_literal_text(payload.get("place"))
+        ws.Range("F15").Value = excel_literal_text(payload.get("taskName") or payload.get("target"))
+    extra = str(payload.get("extraContent") or "").strip()
+    if extra:
+        ws.Range("F27" if str(payload.get("template")) == "special" else "F22").Value = excel_literal_text(excel_extra_content(extra, str(payload.get("template"))))
+    fill_excel_attendees(ws, payload)
+
+
+def number_or_blank(value: object) -> object:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    number = float(text)
+    return int(number) if number.is_integer() else number
+
+
+def excel_time_or_blank(value: object) -> object:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    parsed = datetime.strptime(text, "%H:%M")
+    return (parsed.hour * 60 + parsed.minute) / 1440
+
+
+def excel_date_serial(value: str) -> int:
+    parsed = datetime.strptime(value, "%Y-%m-%d").date()
+    return (parsed - datetime(1899, 12, 30).date()).days
+
+
+def excel_extra_content(value: str, template: str) -> str:
+    if value.strip() == "•":
+        return "•\n•\n•" if template in ("special", "dual_special") else "•\n•\n•\n•\n•\n•"
+    return value
+
+
+def excel_literal_text(value: object) -> str:
+    text = str(value or "")
+    return f"'{text}" if text.startswith(("=", "+", "-", "@")) else text
+
+
+def fill_excel_attendees(ws, payload: dict) -> None:
+    names = attendee_names(payload)
+    used = ws.UsedRange
+    first_row = int(used.Row)
+    last_row = first_row + int(used.Rows.Count) - 1
+    title_row = next(
+        (
+            row
+            for row in range(first_row, last_row + 1)
+            if "참석자 명단" in str(ws.Cells(row, 1).Value or "")
+        ),
+        None,
+    )
+    if title_row is None:
+        return
+    print_rows = [int(value) for value in re.findall(r"\$(\d+)", str(ws.PageSetup.PrintArea or ""))]
+    if print_rows:
+        last_row = min(last_row, max(print_rows))
+    start_row = title_row + 2
+    slots = max(0, last_row - start_row + 1) * 3
+    name_cols = ("B", "K", "T")
+    seq_cols = ("A", "J", "S")
+    has_sequence_columns = "순번" in str(ws.Cells(title_row + 1, 1).Value or "")
+    for index in range(1, int(ws.Shapes.Count) + 1):
+        shape = ws.Shapes(index)
+        if (
+            int(shape.Type) == 13
+            and title_row <= int(shape.TopLeftCell.Row) <= last_row
+            and int(shape.TopLeftCell.Column) <= 28
+        ):
+            shape.Visible = 0 if names else -1
+    for index in range(slots):
+        row = start_row + index // 3
+        slot = index % 3
+        name_range = ws.Range(f"{name_cols[slot]}{row}")
+        name_range.Value = ""
+        name_range.HorizontalAlignment = -4108
+        name_range.VerticalAlignment = -4108
+        name_range.Font.Size = 11
+        if has_sequence_columns:
+            seq_range = ws.Range(f"{seq_cols[slot]}{row}")
+            seq_range.Value = index + 1
+            seq_range.HorizontalAlignment = -4108
+            seq_range.VerticalAlignment = -4108
+    for index, name in enumerate(names[:slots]):
+        row = start_row + index // 3
+        col = name_cols[index % 3]
+        ws.Range(f"{col}{row}").Value = excel_literal_text(spaced_name(name))
+
+
+def fill_excel_trades(ws, payload: dict) -> None:
+    sheet = str(payload.get("sheet") or "")
+    values = display_trade_values(payload.get("trades") or [], sheet)
+    for cell in ("AF10", "AF11", "AF12"):
+        ws.Range(cell).Value = ""
+    for cell, trade in zip(excel_trade_cells(sheet), values):
+        ws.Range(cell).Value = excel_literal_text(trade)
+    for cell, trade in zip(visible_trade_cells(sheet), values):
+        rng = ws.Range(cell)
+        rng.Value = excel_literal_text(trade)
+        if " / " in trade:
+            rng.ShrinkToFit = True
+            rng.WrapText = False
 
 
 def pdf_font_face_style() -> str:
@@ -926,14 +1182,17 @@ def render_report(payload: dict) -> str:
 def render_regular(payload: dict, attendees: list[str]) -> str:
     extra_content = payload.get("extraContent")
     if not str(extra_content or "").strip() or str(extra_content).strip() == "•":
-        extra_content = HIRE_SHORT_EXTRA_CONTENT if payload.get("sheet") == "51-1" else REGULAR_EXTRA_CONTENT
+        extra_content = default_regular_extra_content(payload)
+    content = str(payload.get("content", ""))
+    if payload.get("sheet") == "60":
+        content = content.replace("응급조치에 관한 사항을 포함한다)", "응급조\n치에 관한 사항을 포함한다)")
     attendee_rows = 10 if payload.get("category") == "물질안전보건자료" else 5
     return f"""
     <article class="paper report-page">
       <table class="report-table sheet-grid regular-sheet {regular_sheet_class(payload)}">
         {sheet_colgroup()}
         {sheet_top_rows(payload, "regular")}
-        <tr class="regular-content-row"><th colspan="5"><span class="regular-content-label-text">교육내용</span></th><td colspan="23"><div class="regular-content-text">{multiline(payload.get("content", ""))}</div></td></tr>
+        <tr class="regular-content-row"><th colspan="5"><span class="regular-content-label-text">교육내용</span></th><td colspan="23"><div class="regular-content-text">{multiline(content)}</div></td></tr>
         <tr class="regular-extra-row"><th colspan="5"><span class="regular-extra-label-text">추가내용</span></th><td colspan="23">{multiline(extra_content)}</td></tr>
         {sheet_attendee_rows(attendees, attendee_rows, show_empty_mark=payload.get("category") in ("정기교육", "채용시교육", "작업내용 변경교육", "특수형태근로종사자"))}
       </table>
@@ -942,12 +1201,7 @@ def render_regular(payload: dict, attendees: list[str]) -> str:
 
 
 REGULAR_EXTRA_CONTENT = "•\n•\n•\n•\n•\n•"
-HIRE_SHORT_EXTRA_CONTENT = """• 비산먼지 등 미세먼지에 의한 건강장해 예방에 관한 사항
-• 작업 전 후 스트레칭 등 근골격계 질환 예방에 관한 사항
-• 현장 화장실 등 시설 및 이동통로 안내에 관한 사항
-• 오전, 오후 tbm 시간 및 현장 게시판 안내
-• 현장 내 주의사항에 관한 사항
-•"""
+FIVE_BULLET_EXTRA_CONTENT = "•\n•\n•\n•\n•"
 SPECIAL_COMMON_CONTENT = """•산업안전 및 산업재해 예방에 관한 사항(화재ㆍ폭발 사고 발생 시 대피에 관한 사항을 포함한다)
 •산업보건 및 건강장해 예방에 관한 사항
 •위험성 평가에 관한 사항
@@ -960,21 +1214,43 @@ SPECIAL_COMMON_CONTENT = """•산업안전 및 산업재해 예방에 관한 �
 •사고 발생 시 긴급조치에 관한 사항
 •물질안전보건자료에 관한 사항"""
 DEFAULT_EXTRA_CONTENT = "•\n•\n•"
+SPECIAL_ONE_EXTRA_CONTENT = "•\n•\n•\n•"
+
+
+def special_one_extra_content(value: object) -> str:
+    text = str(value or "").strip()
+    return SPECIAL_ONE_EXTRA_CONTENT if not text or text == "•" else str(value)
+
+
+def special_extra_content(value: object) -> str:
+    text = str(value or "").strip()
+    return DEFAULT_EXTRA_CONTENT if not text or text == "•" else str(value)
+
+
+def default_regular_extra_content(payload: dict) -> str:
+    if payload.get("category") in ("관리감독자", "물질안전보건자료", "특수형태근로종사자"):
+        return FIVE_BULLET_EXTRA_CONTENT
+    return REGULAR_EXTRA_CONTENT
 
 
 def render_special(payload: dict, attendees: list[str]) -> str:
     attendee_marked = payload.get("sheet") in ("1-39(2)", "1-39(3)")
     attendee_page_class = " special-attendee-marked-page" if attendee_marked else ""
+    common_extra = (
+        '<span class="special-common-extra-note">•<span class="special-common-extra-note-text">공통교육내용은 앞시간 교육 진행</span></span><br><span class="special-common-extra-bullet">•</span><br><span class="special-common-extra-bullet">•</span>'
+        if payload.get("sheet") == "1-39(1)"
+        else '<span class="special-common-leading-bullet">•</span><br><span class="special-common-extra-bullet">•</span><br><span class="special-common-extra-bullet">•</span>'
+    )
     return f"""
     <article class="paper report-page">
       <table class="report-table sheet-grid special-sheet">
         {sheet_colgroup()}
         {sheet_top_rows(payload, "special")}
-        <tr class="special-task-row"><th colspan="5">대상작업명</th><td colspan="23"><span class="special-task-text">{special_task_name(payload.get("taskName", ""))}</span></td></tr>
-        <tr class="special-common-row"><th colspan="3" rowspan="4"><span class="special-content-label-text">교육내용</span></th><th colspan="2"><span class="stacked-label">&lt;공통<br>내용&gt;</span></th><td colspan="23"><div class="special-common-text">{multiline(SPECIAL_COMMON_CONTENT)}</div></td></tr>
-        <tr class="special-extra-row special-common-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23"><span class="special-common-leading-bullet">•</span><span class="special-common-extra-note">공통교육내용은 앞시간 교육 진행</span><br><span class="special-common-extra-bullet">•</span><br><span class="special-common-extra-bullet">•</span></td></tr>
-        <tr class="special-individual-row"><th colspan="2"><span class="stacked-label">개별<br>내용</span></th><td colspan="23"><div class="special-individual-text">{multiline(payload.get("content", ""))}</div></td></tr>
-        <tr class="special-extra-row special-individual-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23">{multiline(payload.get("extraContent") or DEFAULT_EXTRA_CONTENT)}</td></tr>
+        <tr class="special-task-row"><th colspan="5"><span class="special-task-label-text">대상작업명</span></th><td colspan="23"><span class="special-task-text">{special_task_name(payload.get("taskName", ""))}</span></td></tr>
+        <tr class="special-common-row"><th colspan="3" rowspan="4"><span class="special-content-label-text">교육내용</span></th><th colspan="2"><span class="stacked-label">&lt;공통<br>내용&gt;</span></th><td colspan="23"><div class="special-common-text">{multiline_tight_bullets(SPECIAL_COMMON_CONTENT)}</div></td></tr>
+        <tr class="special-extra-row special-common-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23">{common_extra}</td></tr>
+        <tr class="special-individual-row"><th colspan="2"><span class="stacked-label">개별<br>내용</span></th><td colspan="23"><div class="special-individual-text">{multiline_tight_bullets(payload.get("content", ""))}</div></td></tr>
+        <tr class="special-extra-row special-individual-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23">{multiline(special_extra_content(payload.get("extraContent")))}</td></tr>
       </table>
     </article>
     <article class="paper report-page attendee-page special-attendee-page{attendee_page_class}">
@@ -989,7 +1265,13 @@ def render_special(payload: dict, attendees: list[str]) -> str:
 def render_inline_special(payload: dict, attendees: list[str]) -> str:
     inline_class = "special-inline-sheet"
     is_special_worker = payload.get("category") == "특수형태근로종사자"
-    if payload.get("category") == "관리감독자":
+    is_management = payload.get("category") == "관리감독자"
+    attendee_row_count = 1 if is_special_worker else 2
+    common_extra_content = special_extra_content(payload.get("extraContent"))
+    individual_extra_content = common_extra_content
+    if common_extra_content == DEFAULT_EXTRA_CONTENT:
+        common_extra_content = "•\n•"
+    if is_management:
         inline_class += " management-inline-sheet"
     if is_special_worker:
         inline_class += " special-worker-inline-sheet"
@@ -1002,12 +1284,12 @@ def render_inline_special(payload: dict, attendees: list[str]) -> str:
       <table class="report-table sheet-grid special-sheet {inline_class}">
         {sheet_colgroup()}
         {sheet_top_rows(payload, "special")}
-        <tr class="special-task-row"><th colspan="5">대상작업명</th><td colspan="23"><span class="special-task-text">{special_task_name(payload.get("taskName", ""))}</span></td></tr>
-        <tr class="special-common-row"><th colspan="3" rowspan="4">교육내용</th><th colspan="2"><span class="stacked-label">&lt;공통<br>내용&gt;</span></th><td colspan="23">{multiline(SPECIAL_COMMON_CONTENT)}</td></tr>
-        <tr class="special-extra-row special-common-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23"><span class="special-common-leading-bullet">•</span><span class="special-common-extra-note">공통교육내용은 앞시간 교육 진행</span><br><span class="special-common-extra-bullet">•</span><br><span class="special-common-extra-bullet">•</span></td></tr>
-        <tr class="special-individual-row"><th colspan="2"><span class="stacked-label">개별<br>내용</span></th><td colspan="23">{multiline(payload.get("content", ""))}</td></tr>
-        <tr class="special-extra-row special-individual-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23">{multiline(payload.get("extraContent") or DEFAULT_EXTRA_CONTENT)}</td></tr>
-        {sheet_attendee_rows(attendees, 1 if is_special_worker else 2, "안전교육 참석자 명단", show_empty_mark=is_special_worker)}
+        <tr class="special-task-row"><th colspan="5"><span class="special-task-label-text">대상작업명</span></th><td colspan="23"><span class="special-task-text">{special_task_name(payload.get("taskName", ""))}</span></td></tr>
+        <tr class="special-common-row"><th colspan="3" rowspan="4"><span class="special-content-label-text">교육내용</span></th><th colspan="2"><span class="stacked-label">&lt;공통<br>내용&gt;</span></th><td colspan="23">{multiline_tight_bullets(SPECIAL_COMMON_CONTENT)}</td></tr>
+        <tr class="special-extra-row special-common-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23">{multiline(common_extra_content)}</td></tr>
+        <tr class="special-individual-row"><th colspan="2"><span class="stacked-label">개별<br>내용</span></th><td colspan="23">{multiline_tight_bullets(payload.get("content", ""))}</td></tr>
+        <tr class="special-extra-row special-individual-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23"><span class="special-individual-extra-text">{multiline(individual_extra_content)}</span></td></tr>
+        {sheet_attendee_rows(attendees, attendee_row_count, "안전교육 참석자 명단", show_empty_mark=is_special_worker and payload.get("sheet") == "1-39(70)")}
       </table>
     </article>
     """
@@ -1020,9 +1302,9 @@ def render_special_one_page(payload: dict, attendees: list[str]) -> str:
       <table class="report-table sheet-grid special-sheet special-one-page-sheet{heat_class}">
         {sheet_colgroup()}
         {sheet_top_rows(payload, "special")}
-        <tr class="special-task-row"><th colspan="5">대상작업명</th><td colspan="23"><span class="special-task-text">{special_task_name(payload.get("taskName", ""))}</span></td></tr>
-        <tr class="special-one-content-row"><th colspan="3" rowspan="2"><span class="special-one-content-label-text">교육내용</span></th><th colspan="2"><span class="stacked-label">개별<br>내용</span></th><td colspan="23"><div class="special-one-content-text">{multiline(payload.get("content", ""))}</div></td></tr>
-        <tr class="special-one-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23">{multiline(payload.get("extraContent") or DEFAULT_EXTRA_CONTENT)}</td></tr>
+        <tr class="special-task-row"><th colspan="5"><span class="special-task-label-text">대상작업명</span></th><td colspan="23"><span class="special-task-text">{special_task_name(payload.get("taskName", ""))}</span></td></tr>
+        <tr class="special-one-content-row"><th colspan="3" rowspan="2"><span class="special-one-content-label-text">교육내용</span></th><th colspan="2"><span class="stacked-label">개별<br>내용</span></th><td colspan="23"><div class="special-one-content-text">{multiline_tight_bullets(payload.get("content", ""))}</div></td></tr>
+        <tr class="special-one-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23"><div class="special-one-extra-text">{multiline(special_one_extra_content(payload.get("extraContent")))}</div></td></tr>
         {sheet_attendee_rows(attendees, 5, "안전교육 참석자 명단")}
       </table>
     </article>
@@ -1030,6 +1312,7 @@ def render_special_one_page(payload: dict, attendees: list[str]) -> str:
 
 
 def render_dual_special(payload: dict, attendees: list[str]) -> str:
+    attendee_marked = payload.get("sheet") == "1-39(2-1)"
     tail_page = "" if is_short_dual_special(payload) else f"""
     <article class="paper report-page dual-tail-page">
       <table class="report-table sheet-grid dual-special-sheet dual-tail-sheet">
@@ -1044,22 +1327,22 @@ def render_dual_special(payload: dict, attendees: list[str]) -> str:
       <table class="report-table sheet-grid dual-special-sheet">
         {sheet_colgroup()}
         {sheet_top_rows(payload, "special")}
-        <tr class="dual-task-row"><th colspan="5">대상작업명 1</th><td colspan="23"><span class="special-task-text">{special_task_name(payload.get("taskName", ""))}</span></td></tr>
-        <tr class="dual-task-row"><th colspan="5">대상작업명 2</th><td colspan="23"><span class="special-task-text">{special_task_name(payload.get("taskName2", ""))}</span></td></tr>
-        <tr class="dual-common-row"><th colspan="3" rowspan="2">교육내용</th><th colspan="2"><span class="stacked-label">공통<br>내용</span></th><td colspan="23">{multiline(SPECIAL_COMMON_CONTENT)}</td></tr>
-        <tr class="dual-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23">{multiline(payload.get("extraContent") or DEFAULT_EXTRA_CONTENT)}</td></tr>
+        <tr class="dual-task-row"><th colspan="5"><span class="dual-task-label-text">대상작업명 1</span></th><td colspan="23"><span class="special-task-text">{multiline(payload.get("taskName", ""))}</span></td></tr>
+        <tr class="dual-task-row"><th colspan="5"><span class="dual-task-label-text">대상작업명 2</span></th><td colspan="23"><span class="special-task-text">{multiline(payload.get("taskName2", ""))}</span></td></tr>
+        <tr class="dual-common-row"><th colspan="3" rowspan="2">교육내용</th><th colspan="2"><span class="stacked-label">공통<br>내용</span></th><td colspan="23">{multiline_tight_bullets(SPECIAL_COMMON_CONTENT)}</td></tr>
+        <tr class="dual-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23">{multiline(special_extra_content(payload.get("extraContent")))}</td></tr>
       </table>
     </article>
     <article class="paper report-page dual-page-two">
       <table class="report-table sheet-grid dual-special-sheet dual-continuation-sheet">
         {sheet_colgroup()}
         {sheet_repeat_title_rows(payload)}
-        <tr class="dual-individual-row"><th colspan="3" rowspan="4">교육내용</th><th colspan="2"><span class="stacked-label">개별<br>내용<br>(1)</span></th><td colspan="23">{multiline(payload.get("content", ""))}</td></tr>
-        <tr class="dual-individual-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23">{multiline(payload.get("extraContent") or DEFAULT_EXTRA_CONTENT)}</td></tr>
-        <tr class="dual-individual-row"><th colspan="2"><span class="stacked-label">개별<br>내용<br>(2)</span></th><td colspan="23">{multiline(payload.get("content2", ""))}</td></tr>
-        <tr class="dual-individual-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23">{multiline(payload.get("extraContent") or DEFAULT_EXTRA_CONTENT)}</td></tr>
+        <tr class="dual-individual-row"><th colspan="3" rowspan="4">교육내용</th><th colspan="2"><span class="stacked-label">개별<br>내용<br>(1)</span></th><td colspan="23"><div class="dual-individual-text">{multiline_tight_bullets(payload.get("content", ""))}</div></td></tr>
+        <tr class="dual-individual-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23"><div class="dual-individual-extra-text">{multiline(special_extra_content(payload.get("extraContent")))}</div></td></tr>
+        <tr class="dual-individual-row"><th colspan="2"><span class="stacked-label">개별<br>내용<br>(2)</span></th><td colspan="23"><div class="dual-individual-text">{multiline_tight_bullets(payload.get("content2", ""))}</div></td></tr>
+        <tr class="dual-individual-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23"><div class="dual-individual-extra-text">{multiline(special_extra_content(payload.get("extraContent")))}</div></td></tr>
         <tr class="dual-spacer-row"><td colspan="28"></td></tr>
-        {sheet_attendee_rows(attendees, 15, "안전교육 참석자 명단")}
+        {sheet_attendee_rows(attendees, 15, "안전교육 참석자 명단", show_empty_mark=attendee_marked)}
       </table>
     </article>
     {tail_page}
@@ -1219,19 +1502,31 @@ def sheet_colgroup() -> str:
     return f"<colgroup>{cols}</colgroup>"
 
 
-def trade_box(trades: list[str]) -> str:
+def display_trade_values(trades: list[str], sheet: str = "") -> list[str]:
     filled = [trade for trade in trades if trade]
-    if len(filled) <= 2:
-        values = filled + (["-"] if len(filled) == 1 else [""] * (2 - len(filled)))
+    slots = len(excel_trade_cells(sheet))
+    if len(filled) > slots:
+        return filled[:slots - 1] + [" / ".join(filled[slots - 1:])]
+    return filled + [""] * (slots - len(filled))
+
+
+def excel_trade_cells(sheet: str = "") -> tuple[str, ...]:
+    return ("AF10", "AF11", "AF12")
+
+
+def visible_trade_cells(sheet: str = "") -> tuple[str, ...]:
+    return ("F7", "N7", "V7")
+
+
+def trade_box(trades: list[str], sheet: str = "") -> str:
+    values = display_trade_values(trades, sheet)
+    slots = len(values)
+    if slots == 2:
         cols = "<colgroup><col style=\"width:34.7826%\"><col style=\"width:65.2174%\"></colgroup>"
-    elif len(filled) <= 3:
-        values = filled
-        cols = "<colgroup><col style=\"width:34.7826%\"><col style=\"width:34.7826%\"><col style=\"width:30.4348%\"></colgroup>"
     else:
-        values = trades[:5]
-        cols = ""
+        cols = "<colgroup><col style=\"width:34.8611%\"><col style=\"width:38.5185%\"><col style=\"width:26.6204%\"></colgroup>"
     cells = "".join(
-        f"<td><span class=\"top-info-value{' trade-placeholder' if trade == '-' else ''}\">{esc(trade)}</span></td>"
+        f"<td><span class=\"{'top-info-value trade-joined trade-joined-' + str(slots) if ' / ' in trade else 'top-info-value'}\">{esc(trade)}</span></td>"
         for trade in values
     )
     return f"<table class=\"sheet-trade-grid\">{cols}<tr>{cells}</tr></table>"
@@ -1243,11 +1538,24 @@ def label_th(text: str, colspan: int) -> str:
 
 
 def target_display_html(payload: dict, layout: str, target: str) -> str:
+    sheet = str(payload.get("sheet") or "").strip()
+    if sheet in COURSE_DISPLAY_TARGET_OVERRIDES:
+        target = str(payload.get("target") or target).strip()
     marker = "(제39호는 제외한다)"
     if layout == "special" and payload.get("template") == "special" and marker in target:
         before, _, after = target.partition(marker)
-        return f"{esc(before)}<br><span class=\"special-target-continuation\">{esc(marker + after)}</span>"
-    return esc(target)
+        rendered = f"{esc(before)}<br><span class=\"special-target-continuation\">{esc(marker + after)}</span>"
+    else:
+        rendered = esc(target)
+    if sheet not in TARGET_FIXED_BREAK_SHEETS:
+        return rendered
+    before, marker, after = target.partition("제1호라목")
+    if not marker:
+        return rendered
+    first_line = f'<span class="target-fixed-line">{esc(before.rstrip())}</span><br>'
+    if sheet in {"1-39(2-3)", "1-39(4)"} and after.endswith("업)"):
+        return f'{first_line}<span class="target-fixed-line">{esc(marker + after[:-2].rstrip())}</span><br><span class="target-fixed-line">{esc(after[-2:])}</span>'
+    return first_line + esc(marker + after)
 
 
 def sheet_top_rows(payload: dict, layout: str) -> str:
@@ -1270,30 +1578,30 @@ def sheet_top_rows(payload: dict, layout: str) -> str:
           <td colspan="10" rowspan="3" class="approval-box-cell">{approval_box(payload)}</td>
         </tr>
         <tr class="sheet-row-sign"></tr>
-        <tr class="sheet-row-info">
+        <tr class="sheet-row-info sheet-date-row">
           {label_th("교육일자", 5)}<td colspan="13" class="excel-left top-info-cell"><span class="top-info-value date-value-text">{date_label(payload.get("date", ""))}</span></td>
         </tr>
         """,
-        f"<tr class=\"sheet-row-info\">{label_th('공종', 5)}<td colspan=\"23\" class=\"trade-box-cell\">{trade_box(trades)}</td></tr>",
+        f"<tr class=\"sheet-row-info sheet-trade-row\">{label_th('공종', 5)}<td colspan=\"23\" class=\"trade-box-cell\">{trade_box(trades, str(payload.get('sheet') or ''))}</td></tr>",
     ])
     if layout == "regular":
         rows.extend([
-            f"<tr class=\"sheet-row-info\">{label_th('교육명', 5)}<td colspan=\"12\" class=\"course-fill\"><span class=\"course-value-text\">{esc(payload.get('courseName', ''))}</span></td>{label_th('법정교육시간', 4)}<td colspan=\"7\" class=\"legal-hours-fill\"><span class=\"top-info-value top-info-value-light\">{esc(payload.get('legalHours', ''))}</span></td></tr>",
+            f"<tr class=\"sheet-row-info sheet-course-row\">{label_th('교육명', 5)}<td colspan=\"12\" class=\"course-fill\"><span class=\"course-value-text\">{esc(payload.get('courseName', ''))}</span></td>{label_th('법정교육시간', 4)}<td colspan=\"7\" class=\"legal-hours-fill\"><span class=\"top-info-value top-info-value-light\">{esc(payload.get('legalHours', ''))}</span></td></tr>",
             f"<tr class=\"sheet-row-info\">{label_th('교육대상', 5)}<td colspan=\"23\" class=\"excel-left target-cell\"><span class=\"top-info-value target-value-text\">{target_html}</span></td></tr>",
             f"<tr class=\"sheet-row-info\">{label_th('교육대상인원', 5)}<td colspan=\"9\" class=\"excel-bold count-cell\"><span class=\"top-info-value count-value-text\">{esc(payload.get('headcount', ''))} 명</span></td>{label_th('금회실시인원', 5)}<td colspan=\"9\" class=\"excel-bold count-cell\"><span class=\"top-info-value count-value-text\">{esc(payload.get('attendeeCount', ''))} 명</span></td></tr>",
             time_row(payload, start1, end1, start2, end2, zero_empty_second=True),
             f"<tr class=\"sheet-row-info regular-instructor-row\">{label_th('교육강사', 5)}<td colspan=\"9\"><span class=\"field-value-text\">{esc(payload.get('instructor', ''))}</span></td>{label_th('교육장소', 5)}<td colspan=\"9\"><span class=\"field-value-text\">{esc(payload.get('place', ''))}</span></td></tr>",
-            f"<tr class=\"sheet-row-info\">{label_th('교육방법', 5)}<td colspan=\"9\"><span class=\"field-value-text\">{esc(payload.get('method', ''))}</span></td>{label_th('사용교재', 5)}<td colspan=\"9\" class=\"excel-left material-cell\"><span class=\"material-value-text\">{esc(payload.get('material', ''))}</span></td></tr>",
+            f"<tr class=\"sheet-row-info\">{label_th('교육방법', 5)}<td colspan=\"9\"><span class=\"field-value-text\">{esc(payload.get('method', ''))}</span></td>{label_th('사용교재', 5)}<td colspan=\"9\" class=\"material-cell\"><span class=\"material-value-text\">{esc(payload.get('material', ''))}</span></td></tr>",
             f"<tr class=\"sheet-row-info\">{label_th('대상작업명', 5)}<td colspan=\"23\" class=\"excel-left regular-target-fill\">{esc(payload.get('courseName') or payload.get('taskName', ''))}</td></tr>",
         ])
     else:
         rows.extend([
-            f"<tr class=\"sheet-row-info\">{label_th('교육명', 5)}<td colspan=\"8\" class=\"course-fill\"><span class=\"course-value-text\">{esc(payload.get('courseName', ''))}</span></td>{label_th('법정교육시간', 4)}<td colspan=\"11\" class=\"legal-hours-fill\"><span class=\"top-info-value top-info-value-light\">{esc(payload.get('legalHours', ''))}</span></td></tr>",
+            f"<tr class=\"sheet-row-info sheet-course-row\">{label_th('교육명', 5)}<td colspan=\"8\" class=\"course-fill\"><span class=\"course-value-text\">{esc(payload.get('courseName', ''))}</span></td>{label_th('법정교육시간', 4)}<td colspan=\"11\" class=\"legal-hours-fill\"><span class=\"top-info-value top-info-value-light\">{esc(payload.get('legalHours', ''))}</span></td></tr>",
             f"<tr class=\"sheet-row-info special-target\">{label_th('교육대상', 5)}<td colspan=\"23\" class=\"excel-left target-cell\"><span class=\"top-info-value target-value-text\">{target_html}</span></td></tr>",
             f"<tr class=\"sheet-row-info special-count-row\">{label_th('교육대상인원', 5)}<td colspan=\"9\" class=\"excel-bold count-cell\"><span class=\"top-info-value count-value-text\">{esc(payload.get('headcount', ''))} 명</span></td>{label_th('금회실시인원', 5)}<td colspan=\"9\" class=\"excel-bold count-cell\"><span class=\"top-info-value count-value-text\">{esc(payload.get('attendeeCount', ''))} 명</span></td></tr>",
             time_row(payload, start1, end1, start2, end2, zero_empty_second=True, row_class="special-time-row"),
             f"<tr class=\"sheet-row-info special-instructor-row\">{label_th('교육강사', 5)}<td colspan=\"9\"><span class=\"field-value-text\">{esc(payload.get('instructor', ''))}</span></td>{label_th('교육장소', 5)}<td colspan=\"9\"><span class=\"field-value-text\">{esc(payload.get('place', ''))}</span></td></tr>",
-            f"<tr class=\"sheet-row-info special-method-row\">{label_th('교육방법', 5)}<td colspan=\"9\"><span class=\"field-value-text\">{esc(payload.get('method', ''))}</span></td>{label_th('사용교재', 5)}<td colspan=\"9\" class=\"excel-left material-cell\"><span class=\"material-value-text\">{esc(payload.get('material', ''))}</span></td></tr>",
+            f"<tr class=\"sheet-row-info special-method-row\">{label_th('교육방법', 5)}<td colspan=\"9\"><span class=\"field-value-text\">{esc(payload.get('method', ''))}</span></td>{label_th('사용교재', 5)}<td colspan=\"9\" class=\"material-cell\"><span class=\"material-value-text\">{esc(payload.get('material', ''))}</span></td></tr>",
         ])
     return "".join(rows)
 
@@ -1346,6 +1654,8 @@ def regular_sheet_class(payload: dict) -> str:
     classes = []
     if payload.get("category") == "정기교육":
         classes.append("routine-regular-sheet")
+    if payload.get("sheet") == "50-3":
+        classes.append("routine-attachment-sheet")
     if payload.get("category") == "특수형태근로종사자":
         classes.append("special-worker-sheet")
     if payload.get("category") == "관리감독자":
@@ -1363,10 +1673,11 @@ def time_row(payload: dict, start1: str, end1: str, start2: str, end2: str, zero
     total_hours = payload.get("totalHours") or payload.get("durationHours", "")
     total_label = duration_label(total_hours)
     class_attr = f" sheet-row-info {row_class}".strip()
+    black_empty_second = payload.get("sheet") in ("51-1", "61", "80") and not start2 and not end2
     return f"""
     <tr class="{class_attr}">
       {label_th("교육시간", 5)}<td colspan="5" class="total-time-cell"><span>{esc(total_label)}</span></td>
-      <td colspan="18" class="time-box-cell">{time_box(start1, end1, start2, end2, zero_empty_second)}</td>
+      <td colspan="18" class="time-box-cell">{time_box(start1, end1, start2, end2, zero_empty_second, black_empty_second)}</td>
     </tr>
     """
 
@@ -1411,11 +1722,12 @@ def approval_signature(payload: dict, key: str, alt: str) -> str:
     return f"<img class=\"approval-signature\" src=\"{esc(data_url)}\" alt=\"{esc(alt)}\">"
 
 
-def time_box(start1: str, end1: str, start2: str, end2: str, zero_empty_second: bool = False) -> str:
+def time_box(start1: str, end1: str, start2: str, end2: str, zero_empty_second: bool = False, black_empty_second: bool = False) -> str:
+    empty_second_class = " empty-second-time" if black_empty_second else ""
     second = (
         f"<th><span>2회차</span></th><td class=\"time-start\"><span>{esc(start2)}</span></td><td class=\"time-sep\"><span>~</span></td><td class=\"time-end\"><span>{esc(end2)}</span></td>"
         if start2 or end2
-        else "<th><span>2회차</span></th><td class=\"time-start\"><span>0시 00분</span></td><td class=\"time-sep\"><span>~</span></td><td class=\"time-end\"><span>0시 00분</span></td>"
+        else f"<th><span>2회차</span></th><td class=\"time-start{empty_second_class}\"><span>0시 00분</span></td><td class=\"time-sep{empty_second_class}\"><span>~</span></td><td class=\"time-end{empty_second_class}\"><span>0시 00분</span></td>"
         if zero_empty_second
         else "<th><span>2회차</span></th><td colspan=\"3\"><span>없음</span></td>"
     )
@@ -1430,7 +1742,12 @@ def time_box(start1: str, end1: str, start2: str, end2: str, zero_empty_second: 
     """
 
 
-def sheet_attendee_rows(attendees: list[str], rows_count: int, title: str = "안전교육 참석자 명단", show_empty_mark: bool = False) -> str:
+def sheet_attendee_rows(
+    attendees: list[str],
+    rows_count: int,
+    title: str = "안전교육 참석자 명단",
+    show_empty_mark: bool = False,
+) -> str:
     empty_mark = '<div class="attendee-empty-mark">별도 첨부</div>' if show_empty_mark and not attendees else ""
     block_class = "attendee-block-row attendee-empty-block" if not attendees else "attendee-block-row"
     display_rows = rows_count
@@ -1445,7 +1762,12 @@ def sheet_attendee_rows(attendees: list[str], rows_count: int, title: str = "안
     ]
     for row_index in range(display_rows):
         first = row_index * 3
-        names = [esc(spaced_name(attendees[first + slot])) if first + slot < len(attendees) else "" for slot in range(3)]
+        names = [
+            f'<span class="attendee-name-text">{esc(spaced_name(attendees[first + slot]))}</span>'
+            if first + slot < len(attendees)
+            else ""
+            for slot in range(3)
+        ]
         if not attendees and rows_count == 5:
             seqs = ["5", "10", "15"] if row_index == display_rows - 1 else ["", "", ""]
         else:
@@ -1612,6 +1934,16 @@ def multiline(value: object) -> str:
     return "<br>".join(esc(line).replace("\t", "&nbsp;") for line in str(value or "").splitlines())
 
 
+def multiline_tight_bullets(value: object) -> str:
+    lines = []
+    for line in str(value or "").splitlines():
+        text = esc(line).replace("\t", '<span class="excel-tab-glyph">o</span>')
+        if line.startswith("•"):
+            text = '<span class="tight-bullet">•</span>' + text[1:]
+        lines.append(text)
+    return "<br>".join(lines)
+
+
 def special_task_name(value: object) -> str:
     text = str(value or "").replace("5대 이상 보유한 사업장에서", "5대 이상 보\n유한 사업장에서")
     return multiline(text)
@@ -1644,9 +1976,37 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self) -> None:
+        if self.headers.get_content_type() != "application/json":
+            self.send_error(415)
+            return
         payload = self.read_json()
         if self.path == "/api/render-report":
             self.json({"html": render_report(payload)})
+        elif self.path in ("/api/export-report-pdf", "/api/export-excel-reference-pdf"):
+            try:
+                with tempfile.TemporaryDirectory() as tmp:
+                    pdf_path = Path(tmp) / "report.pdf"
+                    writer = (
+                        write_excel_report_pdf
+                        if self.path == "/api/export-excel-reference-pdf"
+                        else write_report_pdf
+                    )
+                    writer(payload, pdf_path)
+                    raw = pdf_path.read_bytes()
+            except Exception as error:
+                raw = str(error).encode("utf-8", "replace")
+                self.send_response(500)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pdf")
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(raw)
         elif self.path == "/api/save-report":
             self.json(save_report(payload))
         elif self.path == "/api/clear-reports":
@@ -1735,19 +2095,72 @@ def sample_payload() -> dict:
 
 def self_check() -> None:
     global DB_PATH
+    original_db_path = DB_PATH
+    temporary_db = tempfile.TemporaryDirectory()
+    DB_PATH = Path(temporary_db.name) / "education_log.db"
     init_db()
+    assert hashlib.sha256((STATIC_DIR / "fonts" / "H2HDRM.TTF").read_bytes()).hexdigest() == "273cbb76d95e6c7f78855edff070f2a8dd73e8be18c9329cefd9cf0e4befe2fd"
+    class FakeSheet:
+        def __init__(self, name: str) -> None:
+            self.Name = name
+
+    class FakeSheets:
+        Count = 2
+
+        def __call__(self, key):
+            if key == 1:
+                return FakeSheet("50-1")
+            if key == 2:
+                return FakeSheet("1-39(2-2) ")
+            raise Exception("not found")
+
+    fake_wb = type("FakeWorkbook", (), {"Worksheets": FakeSheets()})()
+    assert excel_worksheet(fake_wb, "1-39(2-2)").Name == "1-39(2-2) "
+    assert excel_date_serial("2026-07-10") == 46213
+    assert excel_literal_text("=1+1") == "'=1+1" and excel_literal_text("현장") == "현장"
     payload = sample_payload()
     regular = render_report(payload)
     assert "안전보건교육일지" in regular and "attachment-mark" not in regular
+    assert "attendee-name-text" in regular
+    generic_special = render_report({**payload, "sheet": "1-39(2)", "template": "special", "category": "특별교육"})
+    assert "공통교육내용은 앞시간 교육 진행" not in generic_special
+    assert '<span class="tight-bullet">•</span>산업안전' in generic_special
+    assert "공통교육내용은 앞시간 교육 진행" in render_report({**payload, "sheet": "1-39(1)", "template": "special", "category": "특별교육"})
+    target_4 = next(course["target"] for course in bootstrap()["courses"] if course["sheet"] == "1-39(4)")
+    assert "target-fixed-line" in render_report({**payload, "sheet": "1-39(4)", "template": "special", "category": "특별교육", "target": target_4})
+    print_targets = (
+        ("50-2", "regular", "정기교육", "가) 판매업무에 직접 종사하는 근로자"),
+        ("50-3", "regular", "정기교육", "나) 판매업무에 직접 종사하는 근자외의 근로자"),
+        ("1-39)71)", "special", "특수형태근로종사자", "단기간 작업 또는 간헐적 작업에 노무를 제공하는 경우"),
+    )
+    for sheet, template, category, target in print_targets:
+        printed = render_report({**payload, "sheet": sheet, "template": template, "category": category, "target": target, "displayTarget": COURSE_DISPLAY_TARGET_OVERRIDES[sheet]})
+        assert f'target-value-text">{target}</span>' in printed
+    assert "routine-attachment-sheet" in regular_sheet_class({"sheet": "50-3", "category": "정기교육"})
+    assert ">-<" not in trade_box(["사무실"], "50-1")
+    assert display_trade_values(["사무실", "토목공사", "철콘공사", "전기공사", "설비공사"], "50-1") == ["사무실", "토목공사", "철콘공사 / 전기공사 / 설비공사"]
+    assert trade_box(["사무실", "토목공사", "철콘공사"], "50-1").count("<td>") == 3
+    assert "34.8611%" in trade_box(["사무실"], "50-1")
+    assert trade_box(["사무실", "토목공사", "철콘공사"], "80").count("<td>") == 3
+    assert "trade-joined-3" in trade_box(["사무실", "토목공사", "철콘공사", "전기공사"], "80")
+    assert visible_trade_cells("50-1") == ("F7", "N7", "V7")
     assert "(채용 시) 안전보건교육일지" in render_report({**payload, "category": "채용시교육", "courseName": "나. 채용시 교육"})
+    hire_default = render_report({**payload, "sheet": "51-1", "category": "채용시교육", "courseName": "나. 채용시 교육", "extraContent": "•"})
+    assert "비산먼지" not in hire_default
     assert "(작업내용 변경 시) 안전보건교육일지" in render_report({**payload, "category": "작업내용 변경교육", "courseName": "다. 작업내용 변경 시 교육"})
-    msds = render_report({**payload, "category": "물질안전보건자료", "courseName": "물질안전보건자료 교육"})
+    course80 = next(course for course in bootstrap()["courses"] if course["sheet"] == "80")
+    assert course80["legal_hours"] == "1시간 이상"
+    msds = render_report({**payload, "sheet": "80", "category": "물질안전보건자료", "courseName": "물질안전보건자료 교육", "legalHours": course80["legal_hours"]})
     assert "(물질안전보건자료) 교육일지" in msds
+    assert "1시간 이상" in msds
     assert "msds-sheet" in msds and msds.count("attendee-data-row") == 10
+    assert "msds-combined-content" not in msds
+    assert "empty-second-time" in msds
     assert "별도 첨부" in render_report({**payload, "category": "채용시교육", "courseName": "나. 채용시 교육", "attendees": ""})
     assert "별도 첨부" in render_report({**payload, "category": "작업내용 변경교육", "courseName": "다. 작업내용 변경 시 교육", "attendees": ""})
-    regular_empty_second = render_report({**payload, "category": "채용시교육", "courseName": "나. 채용시 교육", "session2Start": "", "session2Hours": ""})
+    regular_empty_second = render_report({**payload, "sheet": "51-1", "category": "채용시교육", "courseName": "나. 채용시 교육", "session2Start": "", "session2Hours": ""})
     assert "0시 00분" in regular_empty_second and "없음" not in regular_empty_second
+    assert "empty-second-time" in regular_empty_second
     assert "6 시간" in render_report({**payload, "totalHours": "", "durationHours": "6"})
     half_hour = render_report({**payload, "totalHours": 0.5, "durationHours": ""})
     assert "30분" in half_hour and "0.5 시간" not in half_hour
@@ -1755,22 +2168,47 @@ def self_check() -> None:
     assert "별도 첨부" in special_worker_empty
     special_worker_short_target = render_report({**payload, "category": "특수형태근로종사자", "courseName": "가. 최초 노무제공 시 교육", "target": "단기간 작업 또는 간헐적 작업에 노무를 제공하는 경우"})
     assert "(특수형태 근로종사자 최초) 안전보건교육일지" in special_worker_short_target
+    assert "attendee-header-row" in special_worker_short_target and special_worker_short_target.count("attendee-data-row") == 5
     supervisor_empty = render_report({**payload, "category": "관리감독자", "target": "관리감독자 정기 안전보건교육", "attendees": ""})
     assert "별도 첨부" not in supervisor_empty
+    supervisor_annual = render_report({**payload, "sheet": "60", "category": "관리감독자", "content": "•산업보건 및 건강장해 예방에 관한 사항(폭염ㆍ한파작업으로 인한 건강장해 발생 시 응급조치에 관한 사항을 포함한다)"})
+    assert "응급조<br>치에 관한 사항을 포함한다)" in supervisor_annual
+    management_special = render_report({**payload, "template": "special", "category": "관리감독자", "target": "관리감독자 특별 안전보건교육"})
+    assert "attendee-header-row" in management_special and management_special.count("attendee-data-row") == 2
+    assert 'special-individual-extra-text">•<br>•<br>•</span>' in management_special
+    special_worker_special = render_report({**payload, "template": "special", "category": "특수형태근로종사자", "sheet": "1-39(70)"})
+    assert "attendee-header-row" in special_worker_special and special_worker_special.count("attendee-data-row") == 1
+    assert '<span class="special-content-label-text">교육내용</span>' in special_worker_special
+    assert "공통교육내용은 앞시간 교육 진행" not in management_special + special_worker_special
     assert "•<br>•<br>•<br>•<br>•" in render_report({**payload, "extraContent": "•"})
     noise = render_report({**payload, "category": "소음/난청", "courseName": "소음과 소음성 난청 관련 교육", "template": "regular"})
     assert "(특별) 안전보건교육일지" in noise and "제29조제3항" in noise and "개별<br>내용" in noise and noise.count("<article") == 1
+    assert "attendee-header-row" in noise and noise.count("attendee-data-row") == 5
+    assert multiline_tight_bullets("•항목\t\t").count("excel-tab-glyph") == 2
     heat = render_report({**payload, "category": "혹서기 온열질환", "courseName": "혹서기 온열질환 예방교육", "template": "regular"})
     assert "(특별) 안전보건교육일지" in heat and "제29조제3항" in heat and "개별<br>내용" in heat and heat.count("<article") == 1
     payload["template"] = "special"
     special = render_report(payload)
     assert "교육 참석자 명단" in special and special.count("<article") == 2
+    assert "•<br>•<br>•" in special
+    assert "attendee-header-row" in special and special.count("attendee-data-row") == 30
     assert "0시 00분" in special and "없음" not in special
     payload["template"] = "dual_special"
+    payload["sheet"] = "1-39(2-1)"
+    payload["taskName"] = "5대 이상 보유한 사업장에서 해당 기계로 하는 작업"
     payload["taskName2"] = "26. 비계의 조립·해체 또는 변경작업"
     payload["content2"] = "비계 조립순서와 추락재해 방지"
     dual = render_report(payload)
     assert "(특별 2종)" in dual and "대상작업명 2" in dual and dual.count("<article") == 3
+    assert "dual-combined-content" not in dual and '<tr class="dual-extra-row"><th colspan="2"><span class="stacked-label">추가<br>내용</span></th><td colspan="23">' in dual
+    assert "공통<br>내용" in dual
+    assert "5대 이상 보유한 사업장에서" in dual and "5대 이상 보<br>유한 사업장에서" not in dual
+    assert "홍 길 동" in dual and "김 철 수" in dual and "이 영 희" in dual
+    assert "별도 첨부" not in dual
+    assert dual.count('class="attendee-data-row"') == 16
+    dual_empty = render_report({**payload, "attendees": ""})
+    assert "홍 길 동" not in dual_empty and "별도 첨부" in dual_empty
+    assert excel_extra_content("•", "dual_special").count("•") == 3
     attached_payload = sample_payload()
     image = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l1aZ8QAAAABJRU5ErkJggg=="
     attached_payload["photoAttachments"] = [{"dataUrl": image, "caption": "교육사진"}]
@@ -1788,11 +2226,23 @@ def self_check() -> None:
     assert attendee_names(payload) == ["홍길동", "김철수", "이영희"]
     stats = worker_statistics()
     assert stats["summary"]["total_reports"] >= 0 and isinstance(stats["records"], list)
-    real_db_path = DB_PATH
+    test_db_path = DB_PATH
     with tempfile.TemporaryDirectory() as tmp:
         try:
             DB_PATH = Path(tmp) / "education_log.db"
             init_db()
+            with connect() as con:
+                course = con.execute("SELECT sheet FROM courses ORDER BY sheet LIMIT 1").fetchone()
+                content = con.execute("SELECT code FROM education_content ORDER BY code LIMIT 1").fetchone()
+                assert course and content
+                con.execute("UPDATE courses SET target=? WHERE sheet=?", ("사용자 교육대상", course["sheet"]))
+                con.execute("UPDATE education_content SET content=? WHERE code=?", ("사용자 교육내용", content["code"]))
+                con.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", ("courseDefaultsVersion", "old"))
+                con.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", ("contentDefaultsVersion", "old"))
+            init_db()
+            with connect() as con:
+                assert con.execute("SELECT target FROM courses WHERE sheet=?", (course["sheet"],)).fetchone()["target"] == "사용자 교육대상"
+                assert con.execute("SELECT content FROM education_content WHERE code=?", (content["code"],)).fetchone()["content"] == "사용자 교육내용"
             save_report({**sample_payload(), "saveDirectory": ""})
             reports = list_reports()
             assert len(reports) == 1 and str(reports[0]["educationCount"]) == "3"
@@ -1801,13 +2251,48 @@ def self_check() -> None:
             assert not list_reports()
             assert worker_statistics()["summary"]["total_reports"] == 0
         finally:
-            DB_PATH = real_db_path
-    assert is_newer_version("1.0.3", APP_VERSION) and not is_newer_version(APP_VERSION, APP_VERSION)
+            DB_PATH = test_db_path
+    assert is_newer_version("1.0.4", APP_VERSION) and not is_newer_version(APP_VERSION, APP_VERSION)
+    assert is_trusted_update_url(DEFAULT_UPDATE_MANIFEST_URL)
+    assert not is_trusted_update_url("http://github.com/dusdk0098-tech/education-log-local-app/releases/latest/download/update.json")
+    assert not is_trusted_update_url("https://example.com/update.json")
+    assert not is_trusted_update_url("https://github.com/dusdk0098-tech/education-log-local-app/releases/latest/download/%5c%5cattacker")
+    assert not is_trusted_update_url("https://github.com/dusdk0098-tech/education-log-local-app/releases/latest/download/%252e%252e")
+    assert is_valid_sha256("a" * 64) and not is_valid_sha256("")
     with tempfile.TemporaryDirectory() as tmp:
+        update_root = Path(tmp) / "update"
+        runtime_dir = update_root / "PEDIT-EDU"
+        runtime_dir.mkdir(parents=True)
+        (runtime_dir / "PEDIT-EDU.exe").write_bytes(b"test")
+        assert update_runtime_dir(update_root) == runtime_dir
         valid_zip = Path(tmp) / "update.zip"
         with zipfile.ZipFile(valid_zip, "w") as zf:
-            zf.writestr("LocalEducationLogApp/server.py", "# test")
+            zf.writestr("PEDIT-EDU/PEDIT-EDU.exe", "test")
         validate_update_zip(valid_zip)
+        for unsafe_name in ("/escape.txt", "\\escape.txt", "C:\\escape.txt", "../escape.txt"):
+            with zipfile.ZipFile(valid_zip, "w") as zf:
+                zf.writestr(unsafe_name, "test")
+            try:
+                validate_update_zip(valid_zip)
+            except RuntimeError:
+                continue
+            raise AssertionError(f"unsafe update ZIP path was accepted: {unsafe_name}")
+    original_frozen = getattr(sys, "frozen", None)
+    original_update_config = globals()["update_config"]
+    try:
+        sys.frozen = False
+        assert not apply_startup_update()
+        sys.frozen = True
+        globals()["update_config"] = lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable"))
+        assert not apply_startup_update()
+    finally:
+        globals()["update_config"] = original_update_config
+        if original_frozen is None:
+            del sys.frozen
+        else:
+            sys.frozen = original_frozen
+    DB_PATH = original_db_path
+    temporary_db.cleanup()
     print("self-check ok")
 
 
@@ -1816,6 +2301,8 @@ def main() -> None:
         self_check()
         return
     init_db()
+    if apply_startup_update():
+        return
     port = 8787
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{port}"

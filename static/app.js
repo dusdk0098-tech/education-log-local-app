@@ -28,7 +28,6 @@ const COURSE_TONES = {
 const TARGET_DISPLAY_OVERRIDES = {
   "50-2": "2)그 밖의 근로자 - 가) 판매업무에 직접 종사하는 근로자",
   "50-3": "2)그 밖의 근로자 - 나) 판매업무에 직접 종사하는 근자외의 근로자",
-  "71": "특수형태근로종사자 최초 노무 제공 시 교육 - 단기간 작업 또는 간헐적 작업에 노무를 제공하는 경우",
   "1-39)71)": "특수형태근로종사자 특별교육 - 단기간 작업 또는 간헐적 작업에 노무를 제공하는 경우",
 };
 const CONTEXT_TARGET_SHEETS = new Set([
@@ -291,6 +290,30 @@ async function renderPreview() {
   updateDraftStrip();
 }
 
+async function printReport() {
+  state.payload = readPayload();
+  const printWindow = window.open("", "_blank");
+  try {
+    const response = await fetch("/api/export-report-pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...state.payload, renderScope: state.previewTab }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const url = URL.createObjectURL(await response.blob());
+    if (printWindow) {
+      printWindow.location = url;
+      setTimeout(() => printWindow.print(), 1200);
+    } else {
+      window.open(url, "_blank");
+    }
+  } catch (error) {
+    if (printWindow) printWindow.close();
+    console.warn(error);
+    window.print();
+  }
+}
+
 function updatePreviewTabs() {
   const tabLabels = {
     journal: "교육일지",
@@ -318,7 +341,9 @@ function setFormStep(step) {
   state.formStep = Math.max(0, Math.min(FORM_STEP_COUNT - 1, Number(step) || 0));
   $("reportForm").dataset.step = String(state.formStep);
   document.querySelectorAll("[data-form-step]").forEach((button) => {
-    button.classList.toggle("active", Number(button.dataset.formStep) === state.formStep);
+    const isActive = Number(button.dataset.formStep) === state.formStep;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
   });
   $("formStepMeta").textContent = `${state.formStep + 1} / ${FORM_STEP_COUNT}`;
   $("prevFormStep").disabled = state.formStep === 0;
@@ -456,6 +481,14 @@ async function saveDocumentSettings() {
   alert("문서 설정을 저장했습니다.");
 }
 
+function filterEditorRows(editorId, query) {
+  const term = String(query || "").trim().toLocaleLowerCase();
+  document.querySelectorAll(`#${editorId} .db-row`).forEach((row) => {
+    const values = Array.from(row.querySelectorAll("input, textarea, select"), (field) => field.value).join(" ").toLocaleLowerCase();
+    row.hidden = Boolean(term) && !values.includes(term);
+  });
+}
+
 function renderCourseEditor() {
   $("courseEditor").innerHTML = state.data.courses.map((course) => `
     <div class="db-row course-row">
@@ -472,10 +505,12 @@ function renderCourseEditor() {
   document.querySelectorAll(".course-row").forEach((row, index) => {
     row.querySelector('[data-field="template"]').value = state.data.courses[index].template || "regular";
   });
+  filterEditorRows("courseEditor", $("courseFilter").value);
 }
 
 function renderContentEditor() {
   $("contentEditor").innerHTML = state.data.specialTasks.map(contentRowHtml).join("");
+  filterEditorRows("contentEditor", $("contentFilter").value);
 }
 
 function contentRowHtml(row) {
@@ -527,7 +562,7 @@ async function loadRecords() {
   const { reports } = await api("/api/reports");
   $("recordList").innerHTML = reports.length
     ? reports.map((row) => `<div class="record-row"><strong>${html(row.courseDisplayName || row.title)}</strong><span>교육인원 ${html(row.educationCount || "0")}명</span><small>${html(row.created_at)}</small></div>`).join("")
-    : "<div class=\"record-row\"><strong>저장된 기록이 없습니다.</strong><small></small></div>";
+    : "<div class=\"record-row record-empty\" role=\"status\"><strong>저장된 기록이 없습니다.</strong><small></small></div>";
 }
 
 async function clearRecords() {
@@ -586,7 +621,11 @@ function renderWorkerDetail(workerName) {
 function switchView(view) {
   document.body.dataset.view = view;
   document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === `view-${view}`));
-  document.querySelectorAll(".nav-button").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
+  document.querySelectorAll(".nav-button").forEach((el) => {
+    const isActive = el.dataset.view === view;
+    el.classList.toggle("active", isActive);
+    el.setAttribute("aria-current", isActive ? "page" : "false");
+  });
   if (location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
   if (view === "records") loadRecords();
   if (view === "stats") loadStats();
@@ -649,7 +688,7 @@ async function start() {
   $("photoFiles").addEventListener("change", () => readImageFiles($("photoFiles"), "photoAttachments").catch((error) => alert(error.message)));
   $("certificateFiles").addEventListener("change", () => readImageFiles($("certificateFiles"), "certificateAttachments").catch((error) => alert(error.message)));
   $("refreshPreview").addEventListener("click", renderPreview);
-  $("printReport").addEventListener("click", () => window.print());
+  $("printReport").addEventListener("click", () => printReport());
   $("saveReport").addEventListener("click", saveReport);
   $("saveDocumentSettings").addEventListener("click", saveDocumentSettings);
   $("saveSettings").addEventListener("click", saveSettings);
@@ -657,6 +696,8 @@ async function start() {
   $("clearRecords").addEventListener("click", () => clearRecords().catch((error) => alert(error.message)));
   $("reloadStats").addEventListener("click", loadStats);
   $("workerSearch").addEventListener("input", filterWorkerStats);
+  $("courseFilter").addEventListener("input", () => filterEditorRows("courseEditor", $("courseFilter").value));
+  $("contentFilter").addEventListener("input", () => filterEditorRows("contentEditor", $("contentFilter").value));
   $("workerStatsRows").addEventListener("click", (event) => {
     const button = event.target.closest("[data-worker-index]");
     if (!button) return;
@@ -666,6 +707,7 @@ async function start() {
     setStatsStep("detail");
   });
   $("addContentRow").addEventListener("click", () => {
+    $("contentFilter").value = "";
     state.data.specialTasks.push({ code: "", task_name: "", content: "" });
     renderContentEditor();
   });
