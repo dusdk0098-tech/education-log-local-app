@@ -1,24 +1,68 @@
 {
-  "name": "localeducationlogapp",
-  "version": "1.0.3",
-  "description": "원본 엑셀의 `안내`/`목차`/`DB`/인쇄 양식 구조를 로컬 웹앱으로 다시 구현한 버전입니다.",
-  "main": "index.js",
+  "name": "pedit-edu",
+  "version": "1.0.4",
+  "description": "PEDIT EDU 안전보건교육일지 Electron 호스트",
+  "author": "PEDIT",
+  "private": true,
+  "main": "electron/main.cjs",
+  "type": "commonjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "electron .",
+    "test:python": "py -3 -m unittest tests.test_launcher_host tests.test_launcher_server",
+    "test:electron": "node --test tests/electron/*.test.cjs",
+    "test": "npm run test:python && npm run test:electron",
+    "build:backend": "py -3 -m PyInstaller --noconfirm --clean --distpath dist-backend --workpath build/PeditEduBackend PeditEduBackend.spec && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-backend.ps1",
+    "package:launcher-dir": "npm run build:backend && electron-builder --dir --win --x64 --config.directories.output=release",
+    "package:launcher-release": "npm run package:launcher-dir && node scripts/build-launcher-release.cjs"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dusdk0098-tech/education-log-local-app.git"
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/dusdk0098-tech/education-log-local-app/issues"
+  "dependencies": {
+    "@pedit/electron-app-sdk": "file:packages/electron-app-sdk"
   },
-  "homepage": "https://github.com/dusdk0098-tech/education-log-local-app#readme",
   "devDependencies": {
-    "playwright": "^1.61.1"
+    "electron": "42.6.1",
+    "electron-builder": "26.15.3",
+    "playwright": "1.61.1"
+  },
+  "build": {
+    "appId": "kr.pedit.edu",
+    "productName": "PEDIT EDU",
+    "executableName": "PeditEdu",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "package.json",
+      "electron/**",
+      "static/app.ico"
+    ],
+    "extraResources": [
+      {
+        "from": "dist-backend/PeditEduBackend.exe",
+        "to": "backend/PeditEduBackend.exe"
+      },
+      {
+        "from": "launcher-required.json",
+        "to": "launcher-required.json"
+      }
+    ],
+    "win": {
+      "icon": "static/app.ico",
+      "executableName": "PeditEdu",
+      "signtoolOptions": {
+        "certificateSha1": "B92BEC0B6370F10BC34CB27304921DE75B3073C6"
+      },
+      "target": [
+        {
+          "target": "dir",
+          "arch": ["x64"]
+        }
+      ]
+    }
   }
 }

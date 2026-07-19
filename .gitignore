@@ -8,5 +8,10 @@ server.err.log
 server.pid
 qa_outputs/
 dist/
+dist-backend/
+release/
+app-manifest.json
+!packages/electron-app-sdk/dist/
+!packages/electron-app-sdk/dist/**
 node_modules/
 output/playwright/

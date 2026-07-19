@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "appId": "pedit-edu",
+  "name": "PEDIT EDU",
+  "version": "1.0.4",
+  "minimumLauncherVersion": "0.1.0-beta.1",
+  "protocolVersion": 2,
+  "entryPoint": "PeditEdu.exe"
+}

@@ -22,14 +22,58 @@ from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from urllib import request
 from xml.etree import ElementTree as ET
 
+from launcher_host import (
+    LauncherBootstrapError,
+    LegacyDatabaseMigrationError,
+    is_authorized_request,
+    migrate_legacy_database,
+    parse_bootstrap_line,
+    validate_session_context,
+)
+
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 STATIC_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR)) / "static"
 DB_PATH = APP_DIR / "education_log.db"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
+LAUNCHER_HOSTED = False
+LAUNCHER_STOPPING = False
+BACKEND_SESSION_SECRET = ""
+BACKEND_ORIGIN = ""
+LAUNCHER_SESSION_CONTEXT: dict = {}
 DEFAULT_UPDATE_MANIFEST_URL = "https://github.com/dusdk0098-tech/education-log-local-app/releases/latest/download/update.json"
 DEFAULT_XLSM = Path(
     r"C:\Users\user\Desktop\북평택교육\안전보건교육일지 (2023.09.27 개정 기준) 카페업로드용 2026-03-06 (수정).xlsm"
 )
+
+
+def known_legacy_database_locations() -> list[Path]:
+    local_app_data = Path(os.environ.get("LOCALAPPDATA", "")) if os.environ.get("LOCALAPPDATA") else None
+    candidates = [APP_DIR / "education_log.db"]
+    if local_app_data is not None:
+        candidates.extend(
+            [
+                local_app_data / "PEDIT-EDU" / "education_log.db",
+                local_app_data / "PEDIT-EDU" / "PEDIT-EDU" / "education_log.db",
+            ]
+        )
+    return candidates
+
+
+def configure_launcher_host() -> str:
+    global BACKEND_SESSION_SECRET, DB_PATH, LAUNCHER_HOSTED, LAUNCHER_SESSION_CONTEXT, LAUNCHER_STOPPING
+    raw = sys.stdin.buffer.read(65_538)
+    if raw.endswith(b"\n"):
+        raw = raw[:-1]
+    bootstrap = parse_bootstrap_line(raw)
+    bootstrap.data_dir.mkdir(parents=True, exist_ok=True)
+    target_database = bootstrap.data_dir / "education_log.db"
+    migration = migrate_legacy_database(target_database, known_legacy_database_locations())
+    DB_PATH = target_database
+    BACKEND_SESSION_SECRET = bootstrap.backend_secret
+    LAUNCHER_SESSION_CONTEXT = bootstrap.session_context
+    LAUNCHER_HOSTED = True
+    LAUNCHER_STOPPING = False
+    return migration
 
 NS_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 NS_REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
@@ -434,10 +478,18 @@ def setting_value(key: str, default: str = "") -> str:
 
 
 def update_config() -> dict:
+    if LAUNCHER_HOSTED:
+        return {
+            "currentVersion": APP_VERSION,
+            "manifestUrl": "",
+            "autoUpdateEnabled": False,
+            "managedByLauncher": True,
+        }
     return {
         "currentVersion": APP_VERSION,
         "manifestUrl": setting_value("updateManifestUrl", DEFAULT_UPDATE_MANIFEST_URL).strip() or DEFAULT_UPDATE_MANIFEST_URL,
         "autoUpdateEnabled": setting_value("autoUpdateEnabled") == "1",
+        "managedByLauncher": False,
     }
 
 
@@ -640,6 +692,8 @@ def apply_update(manifest_url: str = "") -> dict:
 
 
 def apply_startup_update() -> bool:
+    if LAUNCHER_HOSTED:
+        return False
     if not getattr(sys, "frozen", False):
         return False
     try:
@@ -1960,7 +2014,31 @@ def esc(value: object) -> str:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def launcher_authorized(self) -> bool:
+        if not LAUNCHER_HOSTED:
+            return True
+        if LAUNCHER_STOPPING:
+            return False
+        return is_authorized_request(
+            client_host=str(self.client_address[0]),
+            host_header=str(self.headers.get("Host") or ""),
+            origin_header=self.headers.get("Origin"),
+            expected_origin=BACKEND_ORIGIN,
+            presented_secret=str(self.headers.get("X-Pedit-Backend-Session") or ""),
+            expected_secret=BACKEND_SESSION_SECRET,
+        )
+
+    def reject_launcher_request(self) -> None:
+        self.send_response(503 if LAUNCHER_HOSTED and LAUNCHER_STOPPING else 403)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Security-Policy", "default-src 'none'")
+        self.end_headers()
+
     def do_GET(self) -> None:
+        if not self.launcher_authorized():
+            self.reject_launcher_request()
+            return
         parsed = urlparse(self.path)
         if parsed.path == "/api/bootstrap":
             self.json(bootstrap())
@@ -1976,11 +2054,32 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self) -> None:
+        global LAUNCHER_SESSION_CONTEXT, LAUNCHER_STOPPING
+        if not self.launcher_authorized():
+            self.reject_launcher_request()
+            return
         if self.headers.get_content_type() != "application/json":
             self.send_error(415)
             return
         payload = self.read_json()
-        if self.path == "/api/render-report":
+        if self.path == "/__launcher/shutdown/prepare":
+            if not LAUNCHER_HOSTED:
+                self.send_error(404)
+                return
+            LAUNCHER_STOPPING = True
+            self.json({"stopping": True})
+            threading.Timer(0.05, self.server.shutdown).start()
+        elif self.path == "/__launcher/session/renew":
+            if not LAUNCHER_HOSTED:
+                self.send_error(404)
+                return
+            try:
+                LAUNCHER_SESSION_CONTEXT = validate_session_context(payload)
+            except LauncherBootstrapError:
+                self.send_error(400)
+                return
+            self.json({"renewed": True})
+        elif self.path == "/api/render-report":
             self.json({"html": render_report(payload)})
         elif self.path in ("/api/export-report-pdf", "/api/export-excel-reference-pdf"):
             try:
@@ -2015,12 +2114,18 @@ class Handler(BaseHTTPRequestHandler):
             save_settings(payload)
             self.json(bootstrap())
         elif self.path == "/api/update/check":
+            if LAUNCHER_HOSTED:
+                self.json({"hasUpdate": False, "managedByLauncher": True})
+                return
             manifest_url = str(payload.get("manifestUrl") or "")
             try:
                 self.json(check_update(manifest_url))
             except Exception as error:
                 self.json(update_error(error, manifest_url))
         elif self.path == "/api/update/apply":
+            if LAUNCHER_HOSTED:
+                self.json({"updating": False, "managedByLauncher": True})
+                return
             manifest_url = str(payload.get("manifestUrl") or "")
             try:
                 result = apply_update(manifest_url)
@@ -2035,6 +2140,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def read_json(self) -> dict:
         size = int(self.headers.get("Content-Length", "0"))
+        if size < 0 or size > 65_536:
+            raise ValueError("REQUEST_BODY_TOO_LARGE")
         return json.loads(self.rfile.read(size).decode("utf-8") or "{}")
 
     def json(self, data: dict) -> None:
@@ -2042,6 +2149,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Security-Policy", "default-src 'none'")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(raw)
 
@@ -2055,10 +2165,20 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", mimetypes.guess_type(target.name)[0] or "application/octet-stream")
         self.send_header("Content-Length", str(len(raw)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
+            "form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; "
+            "style-src 'self'; script-src 'self'; connect-src 'self'",
+        )
         self.end_headers()
         self.wfile.write(raw)
 
     def log_message(self, fmt: str, *args: object) -> None:
+        if LAUNCHER_HOSTED:
+            return
         print(fmt % args)
 
 
@@ -2252,7 +2372,7 @@ def self_check() -> None:
             assert worker_statistics()["summary"]["total_reports"] == 0
         finally:
             DB_PATH = test_db_path
-    assert is_newer_version("1.0.4", APP_VERSION) and not is_newer_version(APP_VERSION, APP_VERSION)
+    assert is_newer_version("1.0.5", APP_VERSION) and not is_newer_version(APP_VERSION, APP_VERSION)
     assert is_trusted_update_url(DEFAULT_UPDATE_MANIFEST_URL)
     assert not is_trusted_update_url("http://github.com/dusdk0098-tech/education-log-local-app/releases/latest/download/update.json")
     assert not is_trusted_update_url("https://example.com/update.json")
@@ -2297,19 +2417,54 @@ def self_check() -> None:
 
 
 def main() -> None:
+    global BACKEND_ORIGIN
     if "--self-check" in sys.argv:
         self_check()
         return
+    launcher_hosted = "--launcher-host" in sys.argv
+    if launcher_hosted:
+        try:
+            configure_launcher_host()
+        except LegacyDatabaseMigrationError:
+            print("PEDIT_EDU_LEGACY_DATABASE_RECOVERY_REQUIRED", file=sys.stderr, flush=True)
+            raise SystemExit(42)
+        except LauncherBootstrapError:
+            print("PEDIT_EDU_LAUNCHER_BOOTSTRAP_INVALID", file=sys.stderr, flush=True)
+            raise SystemExit(41)
     init_db()
-    if apply_startup_update():
+    if not launcher_hosted and apply_startup_update():
         return
     port = 8787
+    if "--port" in sys.argv:
+        try:
+            port = int(sys.argv[sys.argv.index("--port") + 1])
+        except (IndexError, ValueError) as error:
+            raise SystemExit("--port requires an integer") from error
+    if launcher_hosted and port != 0:
+        raise SystemExit("launcher-host requires --port 0")
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    url = f"http://127.0.0.1:{port}"
-    print(f"로컬 교육일지 앱 실행: {url}")
-    if "--no-browser" not in sys.argv:
-        webbrowser.open(url)
-    server.serve_forever()
+    actual_port = int(server.server_address[1])
+    url = f"http://127.0.0.1:{actual_port}"
+    BACKEND_ORIGIN = url
+    if launcher_hosted:
+        ready = {
+            "type": "backend.ready",
+            "protocolVersion": 1,
+            "host": "127.0.0.1",
+            "port": actual_port,
+            "pid": os.getpid(),
+        }
+        raw_ready = (json.dumps(ready, separators=(",", ":")) + "\n").encode("utf-8")
+        sys.stdout.buffer.write(raw_ready)
+        sys.stdout.buffer.flush()
+    else:
+        print(f"로컬 교육일지 앱 실행: {url}")
+        if "--no-browser" not in sys.argv:
+            webbrowser.open(url)
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":
