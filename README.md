@@ -56,3 +56,8 @@ manifest 예시:
 ```bat
 py -3 server.py --self-check
 ```
+
+## 개발 환경 재현성
+
+Python 빌드 환경의 검증 baseline과 잠금 파일 도입 방안은
+[`docs/PYTHON-DEPENDENCIES.md`](docs/PYTHON-DEPENDENCIES.md)를 참고합니다.
