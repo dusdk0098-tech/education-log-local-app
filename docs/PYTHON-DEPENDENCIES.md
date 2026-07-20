@@ -25,6 +25,34 @@ conformance 및 Protocol v2 mock E2E를 검증했습니다.
 | pywin32-ctypes | 0.2.3 |
 | altgraph | 0.17.5 |
 
+## 새 검증 환경 부트스트랩
+
+저장소 루트에서 Python 3.12 virtual environment를 새로 만들고 현재 PowerShell
+프로세스에서만 활성화한다. 실행 정책에 의존하는 활성화 스크립트는 사용하지 않는다.
+현재 `package.json`의 Python 명령은 `py -3`를 사용하므로, npm 검증을 시작하기
+전에 그 명령이 방금 만든 환경을 선택하는지 fail-closed로 확인해야 한다.
+
+```powershell
+py -3.12 -m venv .venv
+$venvPath = (Resolve-Path .\.venv).Path
+$env:VIRTUAL_ENV = $venvPath
+$env:PATH = "$venvPath\Scripts;$env:PATH"
+
+$expectedPython = (Resolve-Path "$venvPath\Scripts\python.exe").Path
+$actualPython = py -3 -c "import sys; print(sys.executable)"
+if ((Resolve-Path -LiteralPath $actualPython).Path -ne $expectedPython) {
+  throw "py -3가 PEDIT EDU .venv를 사용하지 않습니다."
+}
+```
+
+후속 PR에서 hashed lock을 도입한 뒤에는 패키지 설치도 같은 interpreter를
+명시하고 해시 검증을 강제한다.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --require-hashes `
+  -r requirements\locked-windows-x64-py312.txt
+```
+
 새 검증 환경은 Python 3.12를 사용해야 합니다. Python minor version을 바꾸거나
 baseline의 patch version을 갱신할 때에도 아래 잠금 갱신 절차와 전체 검증을
 거쳐야 합니다.
