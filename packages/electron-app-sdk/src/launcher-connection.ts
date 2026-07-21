@@ -173,7 +173,10 @@ export class LauncherConnection {
         void this.failClosed("LAUNCHER_MESSAGE_INVALID")
       }
     })
-    this.socket.once("close", () => this.clearSecrets())
+    this.socket.once("close", () => {
+      if (this.closing) this.clearSecrets()
+      else void this.failClosed("LAUNCHER_PIPE_CLOSED")
+    })
   }
 
   private startHeartbeat(): void {
@@ -234,6 +237,8 @@ export class LauncherConnection {
     this.clearSecrets()
     try {
       await this.reportError("IPC-001", code, false)
+    } catch {
+      // The pipe may already be gone; local fail-closed must still complete.
     } finally {
       this.socket.destroy()
     }

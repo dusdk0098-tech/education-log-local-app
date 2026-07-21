@@ -5,10 +5,10 @@ import { createServer, type Server, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
-import { PackageInstaller } from "../../페딧 런처/src/main/apps/package-installer"
-import { createAppProcessCommand } from "../../페딧 런처/src/main/apps/process-launcher"
-import { type ManagedAppProcess, spawnManagedProcess } from "../../페딧 런처/src/main/apps/managed-process"
-import { WindowsPackageExtractor } from "../../페딧 런처/src/main/apps/windows-package-extractor"
+import { PackageInstaller } from "../../../페딧 런처/src/main/apps/package-installer"
+import { createAppProcessCommand } from "../../../페딧 런처/src/main/apps/process-launcher"
+import { type ManagedAppProcess, spawnManagedProcess } from "../../../페딧 런처/src/main/apps/managed-process"
+import { WindowsPackageExtractor } from "../../../페딧 런처/src/main/apps/windows-package-extractor"
 import {
   createLauncherShutdownMessage,
   JsonLinesDecoder,
@@ -19,8 +19,8 @@ import {
   type AppMessage,
   type LauncherMessage,
   verifyAppHelloProof,
-} from "../../페딧 런처/src/main/pipe/protocol"
-import { AppManifestSchema } from "../../페딧 런처/src/shared/contracts"
+} from "../../../페딧 런처/src/main/pipe/protocol"
+import { AppManifestSchema } from "../../../페딧 런처/src/shared/contracts"
 
 const execFileAsync = promisify(execFile)
 const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
@@ -136,6 +136,15 @@ async function countExactProcesses(name: string, executablePath: string): Promis
   return Number(stdout.trim())
 }
 
+async function countNamedProcesses(name: string): Promise<number> {
+  const { stdout } = await execFileAsync(
+    "powershell.exe",
+    ["-NoProfile", "-Command", "@(Get-Process -Name $env:PEDIT_E2E_PROCESS -ErrorAction SilentlyContinue).Count"],
+    { env: { ...process.env, PEDIT_E2E_PROCESS: path.parse(name).name }, windowsHide: true },
+  )
+  return Number(stdout.trim())
+}
+
 async function waitForBackend(executablePath: string): Promise<void> {
   const deadline = Date.now() + 8_000
   while (Date.now() < deadline) {
@@ -199,6 +208,7 @@ async function forceStopExactBackend(executablePath: string): Promise<void> {
 async function main() {
   const packageFile = path.resolve(required("PEDIT_EDU_PACKAGE"))
   const manifestPath = path.resolve(required("PEDIT_EDU_MANIFEST"))
+  const releaseManifestJws = await readFile(path.resolve(required("PEDIT_EDU_MANIFEST_JWS")), "utf8")
   const manifest = AppManifestSchema.parse(JSON.parse(await readFile(manifestPath, "utf8")))
   const appsRoot = await mkdtemp(path.join(tmpdir(), "pedit-edu-install-"))
   const dataDirectory = await mkdtemp(path.join(tmpdir(), "pedit-edu-data-"))
@@ -221,7 +231,7 @@ async function main() {
   try {
     const installed = await installer.install({
       manifest,
-      releaseManifestJws: "synthetic-e2e-jws-not-a-secret",
+      releaseManifestJws,
       packageFile,
       appsRoot,
     })
@@ -291,6 +301,7 @@ async function main() {
     if (!ready.payload.databaseReady || !ready.payload.rendererReady || !ready.payload.windowReady) {
       throw new Error("PACKAGED_READY_CHECK_FAILED")
     }
+    const readyAt = Date.now()
     await waitForBackend(backendExecutable)
     const firstHeartbeat = await pipe.waitFor("app.heartbeat")
 
@@ -312,6 +323,27 @@ async function main() {
     if (secondHeartbeat.payload.sequence <= firstHeartbeat.payload.sequence) {
       throw new Error("PACKAGED_HEARTBEAT_SEQUENCE_INVALID")
     }
+    const thirdHeartbeat = await pipe.waitFor("app.heartbeat")
+    const fourthHeartbeat = await pipe.waitFor("app.heartbeat")
+    const remainingSurvivalMs = Math.max(0, 20_000 - (Date.now() - readyAt))
+    await Promise.race([
+      delay(remainingSurvivalMs),
+      process.exited.then((exit) => {
+        throw new Error(`PACKAGED_EXIT_DURING_READY_SURVIVAL:${exit.kind}`)
+      }),
+    ])
+    const readySurvivalMs = Date.now() - readyAt
+    const earlyExit = await Promise.race([process.exited, delay(0).then(() => null)])
+    if (earlyExit !== null) {
+      throw new Error(`PACKAGED_ELECTRON_NOT_ALIVE_AFTER_READY:${earlyExit.kind}`)
+    }
+    if (pipe.observedTypes.includes("app.error")) {
+      const runtimeError = await pipe.waitFor("app.error")
+      throw new Error(`PACKAGED_APP_ERROR_AFTER_READY:${runtimeError.payload.code}:${runtimeError.payload.message}`)
+    }
+    if (await countNamedProcesses("PeditEduBackend.exe") < 1) {
+      throw new Error("PACKAGED_BACKEND_NOT_ALIVE_AFTER_READY")
+    }
 
     await pipe.send(createLauncherShutdownMessage(instanceId, "E2E_COMPLETE"))
     const stopping = await pipe.waitFor("app.stopping")
@@ -329,7 +361,7 @@ async function main() {
     if (await countExactProcesses("PeditEdu.exe", entryExecutable) !== 0) {
       throw new Error("PACKAGED_ELECTRON_NOT_STOPPED")
     }
-    if (await countExactProcesses("PeditEduBackend.exe", backendExecutable) !== 0) {
+    if (await countNamedProcesses("PeditEduBackend.exe") !== 0) {
       throw new Error("PACKAGED_BACKEND_NOT_STOPPED")
     }
     if (await containsSecret(dataDirectory, [initialToken, renewedToken, bootstrapSecret])) {
@@ -343,7 +375,13 @@ async function main() {
       installedFromReleaseZip: true,
       handshake: ["app.bootstrap", "app.hello"],
       ready: true,
-      heartbeats: [firstHeartbeat.payload.sequence, secondHeartbeat.payload.sequence],
+      heartbeats: [
+        firstHeartbeat.payload.sequence,
+        secondHeartbeat.payload.sequence,
+        thirdHeartbeat.payload.sequence,
+        fourthHeartbeat.payload.sequence,
+      ],
+      readySurvivalMs,
       sessionRenewed: true,
       lifecycle: [stopping.type, stopped.type],
       appExitKind: exit.kind,

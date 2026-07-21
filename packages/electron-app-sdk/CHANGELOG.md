@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — PEDIT-20260721-017
+
+- 예기치 않은 Launcher Pipe 종료를 다음 heartbeat까지 기다리지 않고 `LAUNCHER_PIPE_CLOSED`로 즉시 fail-closed 처리
+- 이미 닫힌 Pipe로 오류 보고가 실패해도 로컬 fail-closed 전환을 완료
+
 ## 0.4.0
 
 - protocol 2 실행 인자와 필수 `--package-hash` 검증

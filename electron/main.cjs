@@ -179,7 +179,7 @@ ipcMain.handle("launcher:status", (event) => {
 
 app.whenReady().then(start).catch((error) => void reportStartupFailure(runtime, failClosed, error));
 app.on("window-all-closed", () => {
-  if (!quitting) app.quit();
+  if (!quitting && failClosed.shouldQuitOnWindowAllClosed()) app.quit();
 });
 app.on("before-quit", (event) => {
   if (quitting) return;

@@ -34,7 +34,7 @@ from launcher_host import (
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 STATIC_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR)) / "static"
 DB_PATH = APP_DIR / "education_log.db"
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 LAUNCHER_HOSTED = False
 LAUNCHER_STOPPING = False
 BACKEND_SESSION_SECRET = ""
@@ -2372,7 +2372,7 @@ def self_check() -> None:
             assert worker_statistics()["summary"]["total_reports"] == 0
         finally:
             DB_PATH = test_db_path
-    assert is_newer_version("1.0.5", APP_VERSION) and not is_newer_version(APP_VERSION, APP_VERSION)
+    assert is_newer_version("1.0.6", APP_VERSION) and not is_newer_version(APP_VERSION, APP_VERSION)
     assert is_trusted_update_url(DEFAULT_UPDATE_MANIFEST_URL)
     assert not is_trusted_update_url("http://github.com/dusdk0098-tech/education-log-local-app/releases/latest/download/update.json")
     assert not is_trusted_update_url("https://example.com/update.json")

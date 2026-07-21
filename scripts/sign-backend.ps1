@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$thumbprint = "B92BEC0B6370F10BC34CB27304921DE75B3073C6"
+$thumbprint = "59CF023FA686F6B1FB7CFD35DD5BAAD53088181D"
 $target = Join-Path $PSScriptRoot "..\dist-backend\PeditEduBackend.exe"
 if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
     throw "BACKEND_EXECUTABLE_MISSING"
