@@ -12,6 +12,9 @@ function createFailClosedController(options) {
     },
     get failed() {
       return failed;
+    },
+    shouldQuitOnWindowAllClosed() {
+      return !failed;
     }
   };
 }

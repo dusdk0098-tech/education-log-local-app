@@ -1,6 +1,6 @@
 {
   "name": "pedit-edu",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "PEDIT EDU 안전보건교육일지 Electron 호스트",
   "author": "PEDIT",
   "private": true,
@@ -13,7 +13,7 @@
     "test": "npm run test:python && npm run test:electron",
     "build:backend": "py -3 -m PyInstaller --noconfirm --clean --distpath dist-backend --workpath build/PeditEduBackend PeditEduBackend.spec && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-backend.ps1",
     "package:launcher-dir": "npm run build:backend && electron-builder --dir --win --x64 --config.directories.output=release",
-    "package:launcher-release": "npm run package:launcher-dir && node scripts/build-launcher-release.cjs"
+    "package:launcher-release": "npm run package:launcher-dir && node scripts/build-launcher-release.cjs && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-launcher-manifest.ps1 -Verify"
   },
   "repository": {
     "type": "git",
@@ -55,7 +55,7 @@
       "icon": "static/app.ico",
       "executableName": "PeditEdu",
       "signtoolOptions": {
-        "certificateSha1": "B92BEC0B6370F10BC34CB27304921DE75B3073C6"
+        "certificateSha1": "59CF023FA686F6B1FB7CFD35DD5BAAD53088181D"
       },
       "target": [
         {

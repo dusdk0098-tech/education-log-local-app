@@ -12,7 +12,7 @@ const output = path.join(root, "release", "launcher");
 const template = JSON.parse(readFileSync(path.join(root, "launcher", "app-manifest.template.json"), "utf8"));
 const archiveBase = `${template.appId}-${template.version}-windows-x64`;
 const archivePath = path.join(output, `${archiveBase}.zip`);
-const manifestPath = path.join(output, `${archiveBase}.manifest.json`);
+const manifestPath = path.join(output, "app-manifest.json");
 const rootManifestPath = path.join(root, "app-manifest.json");
 
 main().catch((error) => {
@@ -22,9 +22,8 @@ main().catch((error) => {
 
 async function main() {
   await assertReleaseTree(source);
+  await fs.rm(output, { recursive: true, force: true });
   await fs.mkdir(output, { recursive: true });
-  await fs.rm(archivePath, { force: true });
-  await fs.rm(manifestPath, { force: true });
   const archive = spawnSync("tar.exe", ["-a", "-c", "-f", archivePath, "-C", source, "."], {
     encoding: "utf8",
     windowsHide: true
