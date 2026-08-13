@@ -12,7 +12,9 @@
     "test:electron": "node --test tests/electron/*.test.cjs",
     "test": "npm run test:python && npm run test:electron",
     "build:backend": "py -3 -m PyInstaller --noconfirm --clean --distpath dist-backend --workpath build/PeditEduBackend PeditEduBackend.spec && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-backend.ps1",
+    "build:backend:unsigned": "py -3 -m PyInstaller --noconfirm --clean --distpath dist-backend --workpath build/PeditEduBackend PeditEduBackend.spec",
     "package:launcher-dir": "npm run build:backend && electron-builder --dir --win --x64 --config.directories.output=release",
+    "package:central-signing-candidate": "npm run build:backend:unsigned && electron-builder --dir --win --x64 --config.directories.output=release --config.win.signExecutable=false && node scripts/build-central-signing-candidate.cjs",
     "package:launcher-release": "npm run package:launcher-dir && node scripts/build-launcher-release.cjs && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign-launcher-manifest.ps1 -Verify"
   },
   "repository": {

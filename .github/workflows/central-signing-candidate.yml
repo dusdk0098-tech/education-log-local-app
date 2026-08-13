@@ -1,0 +1,31 @@
+name: Central signing candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: npm ci
+      - run: py -3 -m pip install --disable-pip-version-check pyinstaller pywin32
+      - run: npm run test
+      - run: npm run package:central-signing-candidate
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pedit-central-signing-candidate
+          path: release/central-signing-candidate
+          if-no-files-found: error
+          retention-days: 3
